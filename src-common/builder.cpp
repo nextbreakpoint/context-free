@@ -37,12 +37,10 @@
 #include "agg_basics.h"
 #include "cfdgimpl.h"
 #include "primShape.h"
-#include <string.h>
-#include <math.h>
+#include <cmath>
 #include <cassert>
 #include <limits>
 #include "scanner.h"
-#include <cstring>
 #include <typeinfo>
 
 using namespace AST;
@@ -89,9 +87,9 @@ const std::map<std::string, int> Builder::FlagNames = {
 Builder* Builder::CurrentBuilder = nullptr;
 double Builder:: MaxNatural = 1000.0;
 
-Builder::Builder(cfdgi_ptr cfdg, int variation)
-: m_CFDG(std::move(cfdg)), m_currentPath(nullptr), m_pathCount(1),
-  mInPathContainer(false), mCurrentShape(-1),
+Builder::Builder(const cfdgi_ptr& cfdg, int variation)
+: m_CFDG(cfdg), m_currentPath(nullptr), m_pathCount(1),
+  mInPathContainer(false), mCurrentShape(-1), mParamSize(0),
   mLocalStackDepth(0), mIncludeDepth(0), mAllowOverlap(false), lexer(nullptr),
   mErrorOccured(false)
 { 
@@ -265,14 +263,14 @@ Builder::SetShape(std::string* name, const yy::location& nameLoc, bool isPath)
         CfdgError::Error(def->mLocation, "    the function is here");
         return;
     }
-    const char* err = m_CFDG->setShapeParams(mCurrentShape, mParamDecls, mParamDecls.mStackCount, isPath);
+    const char* err = m_CFDG->setShapeParams(mCurrentShape, mParamDecls, mParamSize, isPath);
     if (err) {
         mErrorOccured = true;
         warning(nameLoc, err);
     }
-    mLocalStackDepth -= mParamDecls.mStackCount;
+    mLocalStackDepth -= mParamSize;
     mParamDecls.mParameters.clear();
-    mParamDecls.mStackCount = 0;
+    mParamSize = 0;
 }
 
 void
@@ -310,12 +308,27 @@ Builder::NextParameterDecl(const std::string& type, const std::string& name,
     mParamDecls.addParameter(type, nameIndex, typeLoc, nameLoc);
     ASTparameter& param = mParamDecls.mParameters.back();
     param.mStackIndex = mLocalStackDepth;
-    mParamDecls.mStackCount += param.mTuplesize;
+    mParamSize += param.mTuplesize;
     mLocalStackDepth += param.mTuplesize;
 }
 
 ASTdefine*
-Builder::MakeDefinition(const std::string& name, const yy::location& nameLoc,
+Builder::MakeDefinition(CFG cfgnum, const yy::location& cfgLoc, exp_ptr exp)
+{
+    if (!mContainerStack.back()->isGlobal) {
+        CfdgError::Error(cfgLoc, "Configuration parameters must be at global scope");
+        return nullptr;
+    }
+    std::string name(CFDG::ParamNames[cfgnum]);     // copy the name
+    ASTdefine* cfg = new ASTdefine(std::move(name), cfgLoc);
+    cfg->mConfigDepth = static_cast<int>(mIncludeDepth);
+    cfg->mDefineType = ASTdefine::ConfigDefine;
+    cfg->mExpression = std::move(exp);
+    return cfg;
+}
+
+ASTdefine*
+Builder::MakeDefinition(std::string& name, const yy::location& nameLoc,
                         bool isFunction)
 {
     if (strncmp(name.c_str(), "CF::", 4) == 0) {
@@ -327,7 +340,7 @@ Builder::MakeDefinition(const std::string& name, const yy::location& nameLoc,
             CfdgError::Error(nameLoc, "Configuration parameters must be at global scope");
             return nullptr;
         }
-        ASTdefine* cfg = new ASTdefine(name, nameLoc);
+        ASTdefine* cfg = new ASTdefine(std::move(name), nameLoc);
         cfg->mConfigDepth = static_cast<int>(mIncludeDepth);
         cfg->mDefineType = ASTdefine::ConfigDefine;
         return cfg;
@@ -346,16 +359,16 @@ Builder::MakeDefinition(const std::string& name, const yy::location& nameLoc,
     }
 
     CheckVariableName(nameIndex, nameLoc, false);
-    ASTdefine* def = new ASTdefine(name, nameLoc);
+    ASTdefine* def = new ASTdefine(std::move(name), nameLoc);
     def->mShapeSpec.shapeType = nameIndex;
     if (isFunction) {
         for (ASTparameter& param: mParamDecls.mParameters)
             param.mLocality = PureNonlocal;
         def->mParameters = mParamDecls.mParameters;     // copy
-        def->mStackCount = mParamDecls.mStackCount;
+        def->mParamSize = mParamSize;
         def->mDefineType = ASTdefine::FunctionDefine;
-        mLocalStackDepth -= mParamDecls.mStackCount;
-        mParamDecls.mStackCount = 0;
+        mLocalStackDepth -= mParamSize;
+        mParamSize = 0;
         
         AST::ASTdefine* prev = m_CFDG->declareFunction(nameIndex, def);
         assert(prev == def);    // since findFunction() didn't find it
@@ -371,8 +384,14 @@ Builder::MakeDefinition(const std::string& name, const yy::location& nameLoc,
 void
 Builder::MakeConfig(ASTdefine* cfg)
 {
+    CFG cfgNum = CFDG::lookupCfg(cfg->mName);
+    if (cfgNum == CFG::Unknown) {
+        warning(cfg->mLocation, "Unknown configuration parameter");
+        return;
+    }
+    
     yy::location expLoc = cfg->mExpression ? cfg->mExpression->where : cfg->mLocation;
-    if (cfg->mName == "CF::Impure") {
+    if (cfgNum == CFG::Impure) {
         double v = 0.0;
         if (!cfg->mExpression || !cfg->mExpression->isConstant || cfg->mExpression->evaluate(&v, 1) != 1) {
             CfdgError::Error(expLoc, "CF::Impure requires a constant numeric expression");
@@ -380,7 +399,7 @@ Builder::MakeConfig(ASTdefine* cfg)
             ASTparameter::Impure = v != 0.0;
         }
     }
-    if (cfg->mName == "CF::AllowOverlap") {
+    if (cfgNum == CFG::AllowOverlap) {
         double v = 0.0;
         if (!cfg->mExpression || !cfg->mExpression->isConstant || cfg->mExpression->evaluate(&v, 1) != 1) {
             CfdgError::Error(expLoc, "CF::AllowOverlap requires a constant numeric expression");
@@ -393,7 +412,7 @@ Builder::MakeConfig(ASTdefine* cfg)
     // problems with latest clang. So grab an unmanaged copy ahead of time and use the copy.
     const ASTexpression* cfgExp = cfg->mExpression.get();
     
-    if (cfg->mName == "CF::StartShape" && cfgExp &&
+    if (cfgNum == CFG::StartShape && cfgExp &&
         typeid(*cfgExp) != typeid(ASTstartSpecifier))
     {
         // This code supports setting the startshape with a config statement:
@@ -426,14 +445,13 @@ Builder::MakeConfig(ASTdefine* cfg)
         }
         
         if (!mod)
-            mod.reset(new ASTmodification(expLoc));
+            mod = std::make_unique<ASTmodification>(expLoc);
         
-        cfg->mExpression.reset(new ASTstartSpecifier(std::move(*rule), std::move(mod)));
+        cfg->mExpression = std::make_unique<ASTstartSpecifier>(std::move(*rule), std::move(mod));
     }
     ASTexpression* current = cfg->mExpression.get();
-    if (!m_CFDG->addParameter(cfg->mName, std::move(cfg->mExpression), static_cast<unsigned>(cfg->mConfigDepth)))
-        warning(cfg->mLocation, "Unknown configuration parameter");
-    if (cfg->mName == "CF::MaxNatural") {
+    m_CFDG->addParameter(cfgNum, std::move(cfg->mExpression), static_cast<unsigned>(cfg->mConfigDepth));
+    if (cfgNum == CFG::MaxNatural) {
         const ASTexpression* max = m_CFDG->hasParameter(CFG::MaxNatural);
         if (max != current || !max)
             return;                             // only process if we are changing it
@@ -505,17 +523,17 @@ Builder::MakeArray(AST::str_ptr name, AST::exp_ptr args, const yy::location& nam
 ASTexpression*
 Builder::MakeLet(const yy::location& letLoc, AST::cont_ptr vars, exp_ptr exp)
 {
-    static const std::string name("let");
+    std::string name("let");
     int nameIndex = StringToShape(name, letLoc, false);
     yy::location defLoc = exp->where;
-    def_ptr def(new ASTdefine(name, defLoc));
+    def_ptr def = std::make_unique<ASTdefine>(std::move(name), defLoc);
     def->mShapeSpec.shapeType = nameIndex;
     def->mExpression = std::move(exp);
     def->mDefineType = ASTdefine::LetDefine;
     return new ASTlet(std::move(vars), std::move(def), letLoc, defLoc);
 }
 
-ASTruleSpecifier*  
+ruleSpec_ptr
 Builder::MakeRuleSpec(const std::string& name, exp_ptr args,
                       const yy::location& loc, mod_ptr mod, bool makeStart)
 {
@@ -523,12 +541,12 @@ Builder::MakeRuleSpec(const std::string& name, exp_ptr args,
         // if and let are handled by the parser, select is handled here
         if (name == "select") {
             yy::location argsLoc = args->where;
-            args.reset(new ASTselect(std::move(args), argsLoc, false));
+            args = std::make_unique<ASTselect>(std::move(args), argsLoc, false);
         }
         if (makeStart)
-            return new ASTstartSpecifier(std::move(args), loc, std::move(mod));
+            return std::make_unique<ASTstartSpecifier>(std::move(args), loc, std::move(mod));
         else
-            return new ASTruleSpecifier(std::move(args), loc);
+            return std::make_unique<ASTruleSpecifier>(std::move(args), loc);
     }
 
     int nameIndex = StringToShape(name, loc, true);
@@ -539,16 +557,16 @@ Builder::MakeRuleSpec(const std::string& name, exp_ptr args,
         warning(loc, "Shape name binds to global variable and current shape, using current shape");
     
     if (bound && bound->isParameter && bound->mType == RuleType)
-        return new ASTruleSpecifier(nameIndex, name, loc);
+        return std::make_unique<ASTruleSpecifier>(nameIndex, name, loc);
     
-    ASTruleSpecifier* ret = nullptr;
+    ruleSpec_ptr ret;
     m_CFDG->setShapeHasNoParams(nameIndex, args.get());
     if (makeStart)
-        ret = new ASTstartSpecifier(nameIndex, name, std::move(args), loc,
-                                    std::move(mod));
+        ret = std::make_unique<ASTstartSpecifier>(nameIndex, name, std::move(args),
+                                                  loc, std::move(mod));
     else
-        ret = new ASTruleSpecifier(nameIndex, name, std::move(args), loc,
-                                   m_CFDG->getShapeParams(mCurrentShape));
+        ret = std::make_unique<ASTruleSpecifier>(nameIndex, name, std::move(args),
+                                                 loc, m_CFDG->getShapeParams(mCurrentShape));
     if (ret->arguments && ret->arguments->mType == ReuseType) {
         if (makeStart)
             CfdgError::Error(loc, "Startshape cannot reuse parameters");
@@ -584,7 +602,7 @@ Builder::MakeElement(const std::string& s, mod_ptr mods, exp_ptr params,
     if (mInPathContainer && !subPath && (s == "FILL" || s == "STROKE")) 
         return new ASTpathCommand(s, std::move(mods), std::move(params), loc);
     
-    ruleSpec_ptr r(MakeRuleSpec(s, std::move(params), loc));
+    ruleSpec_ptr r = MakeRuleSpec(s, std::move(params), loc);
     ASTreplacement::repElemListEnum t = ASTreplacement::replacement;
     if (r->argSource == ASTruleSpecifier::ParentArgs)
         r->argSource = ASTruleSpecifier::SimpleParentArgs;
@@ -646,7 +664,7 @@ Builder::MakeFunction(str_ptr name, exp_ptr args, const yy::location& nameLoc,
     
     // If args are parameter reuse args then it must be a rule spec
     if (args && args->mType == ReuseType)
-        return MakeRuleSpec(*name, std::move(args), nameLoc + argsLoc);
+        return MakeRuleSpec(*name, std::move(args), nameLoc + argsLoc).release();
     
     // At this point we don't know if this is a typo or a to-be-defined shape or
     // user function. Return an ASTuserFunction and fix it up during type check.
@@ -681,17 +699,16 @@ void
 Builder::push_repContainer(ASTrepContainer& c)
 {
     mContainerStack.push_back(&c);
+    mStackStack.push_back(mLocalStackDepth);
     process_repContainer(c);
 }
 
 void
 Builder::process_repContainer(ASTrepContainer& c)
 {
-    c.mStackCount = 0;
     for (ASTparameter& param: c.mParameters) {
         if (param.isParameter || param.isLoopIndex) {
             param.mStackIndex = mLocalStackDepth;
-            c.mStackCount += param.mTuplesize;
             mLocalStackDepth += param.mTuplesize;
         } else {
             break;  // the parameters are all in front
@@ -705,13 +722,14 @@ Builder::pop_repContainer(ASTreplacement* r)
     if (m_CFDG) m_CFDG->reportStackDepth(mLocalStackDepth);
     assert(!mContainerStack.empty());
     ASTrepContainer* lastContainer = mContainerStack.back();
-    mLocalStackDepth -= lastContainer->mStackCount;
+    mLocalStackDepth = mStackStack.back();
     if (r) {
         r->mRepType |= lastContainer->mRepType;
         if (r->mPathOp == unknownPathop)
             r->mPathOp = lastContainer->mPathOp;
     }
     mContainerStack.pop_back();
+    mStackStack.pop_back();
 }
 
 static bool badContainer(int containerType)
@@ -832,9 +850,3 @@ Builder::timeWise()
     m_CFDG->addParameter(CFDGImpl::Time);
 }
 
-void
-Builder::storeParams(const StackRule* p)
-{
-    p->mRefCount = StackRule::MaxRefCount;
-    m_CFDG->mLongLivedParams.push_back(p);
-}

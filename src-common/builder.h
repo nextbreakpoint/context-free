@@ -47,7 +47,7 @@
 #include "astreplacement.h"
 
 class CFDGImpl;
-using cfdgi_ptr = std::unique_ptr<CFDGImpl>;
+using cfdgi_ptr = std::shared_ptr<CFDGImpl>;
 namespace yy {
     class location;
 }
@@ -76,6 +76,7 @@ public:
     Rand64          mSeed;
     
     AST::ASTrepContainer mParamDecls;
+    unsigned             mParamSize;
     
     static const std::map<std::string, int> FlagNames;
 
@@ -87,6 +88,7 @@ public:
     
     using ContainerStack_t = std::deque<AST::ASTrepContainer*>;
     ContainerStack_t    mContainerStack;
+    std::deque<int>     mStackStack;
     void                push_repContainer(AST::ASTrepContainer& c);
     void                pop_repContainer(AST::ASTreplacement* r);
     void                push_rep(AST::ASTreplacement* r, bool global = false);
@@ -97,15 +99,13 @@ public:
     
     std::stack<AST::ASTswitch*> switchStack;
 
-    void storeParams(const StackRule* p);
-    
     yy::Scanner*    lexer;
     void    warning(const yy::location& errLoc, const std::string& msg);
     void    error(const yy::location& errLoc, const std::string& msg);
     void    error(int line, const char* msg);
     bool    mErrorOccured;
     
-    Builder(cfdgi_ptr cfdg, int variation);
+    Builder(const cfdgi_ptr& cfdg, int variation);
     ~Builder();
     
     int             StringToShape(const std::string& name, const yy::location& loc,
@@ -124,7 +124,7 @@ public:
                                       const yy::location& typeLoc, const yy::location& nameLoc);
     AST::ASTexpression*  
                     MakeVariable(const std::string& name, const yy::location& loc);
-    AST::ASTruleSpecifier*  
+    AST::ruleSpec_ptr
                     MakeRuleSpec(const std::string& name, AST::exp_ptr a,
                                  const yy::location& loc, AST::mod_ptr mod = nullptr,
                                  bool makeStart = false);
@@ -139,11 +139,12 @@ public:
                     MakeArray(AST::str_ptr name, AST::exp_ptr args, const yy::location& nameLoc, 
                                 const yy::location& argsLoc);
     AST::ASTexpression*
-    MakeLet(const yy::location& letLoc, AST::cont_ptr vars, AST::exp_ptr exp);
+                    MakeLet(const yy::location& letLoc, AST::cont_ptr vars, AST::exp_ptr exp);
     AST::ASTmodification*
                     MakeModification(AST::mod_ptr modExp, const yy::location& loc,
                                      bool canonical);
-    AST::ASTdefine* MakeDefinition(const std::string& name, const yy::location& nameLoc,
+    AST::ASTdefine* MakeDefinition(CFG cfgnum, const yy::location& cfgLoc, AST::exp_ptr exp);
+    AST::ASTdefine* MakeDefinition(std::string& name, const yy::location& nameLoc,
                                    bool isFunction);
     std::string     GetTypeInfo(int name, AST::ASTdefine*& func, const AST::ASTparameters*& p);
     const AST::ASTrule*

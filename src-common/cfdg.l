@@ -86,7 +86,7 @@ STRING     {STRINGLET}(::{STRINGLET})*
                                                                 
     int c;
     
-    while ((c = yyinput()) != EOF) {
+    while ((c = yyinput()) != YY_NULL) {
         if (c == '\n') break;
     }
 
@@ -99,7 +99,7 @@ STRING     {STRINGLET}(::{STRINGLET})*
     bool lastCharWasAStar = false;
  
     // stop when we get to */ or end-of-file
-    while ((c = yyinput()) != EOF) {
+    while ((c = yyinput()) != YY_NULL) {
         if (c == '\n') 
             yylloc->lines(1);
         else 
@@ -111,7 +111,7 @@ STRING     {STRINGLET}(::{STRINGLET})*
         lastCharWasAStar = c == '*';
     }
     
-    if (c == EOF) {
+    if (c == YY_NULL) {
         LexerError("end-of-file in block comment");
         return token::BADEOF;
     }
@@ -232,7 +232,7 @@ STRING     {STRINGLET}(::{STRINGLET})*
         size_t len = strlen(utf8chars[tok]);
         (yylloc->end) = (yylloc->begin);
         yylloc->columns(1);
-        yyless(len);
+        yyless(static_cast<int>(len));
         return tok;
     }
     
@@ -242,11 +242,11 @@ STRING     {STRINGLET}(::{STRINGLET})*
         yylval->string->resize(pos);
         (yylloc->end) = (yylloc->begin);
         yylloc->columns(utf8length(yytext, pos));
-        yyless(pos);
+        yyless(static_cast<int>(pos));
         return token::USER_STRING;
     }
     int c = yyinput();
-    if (c != EOF) unput(c);
+    if (c != YY_NULL) unput(c);
     return c == '[' ? token::USER_ARRAYNAME : token::USER_STRING;
 }
 {RATIONAL}  {yylval->string = new std::string(yytext); return token::USER_RATIONAL;}

@@ -35,33 +35,11 @@
 #include "cfdg.h"
 #include "SVGCanvas.h"
 #include "ImageCanvas.h"
-#include "qtCanvas.h"
+#include "AVcanvas.h"
 #include "tiledCanvas.h"
 #include "Rand64.h"
 #include <tgmath.h>
-
-// Provide the forward-declarations of new 10.7 SDK symbols so they can be
-// called when building with the 10.5 SDK.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-@interface NSWindow (LionSDKDeclarations)
-- (void)toggleFullScreen:(id)sender;
-@end
-
-enum {
-    NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7,
-    NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
-};
-
-enum {
-    NSWindowFullScreenButton = 7
-};
-
-enum {
-    NSFullScreenWindowMask = 1 << 14
-};
-#endif  // MAC_OS_X_VERSION_10_7
+#include <tempfile.h>
 
 //#define PROGRESS_ANIMATE_DIRECTLY
 //#define USE_SAVE_GRAPHICS_STATE
@@ -92,6 +70,7 @@ enum {
     
     switch (fmt) {
         case aggCanvas::RGBA8_Blend:
+        case aggCanvas::AV_Blend:
         case aggCanvas::RGBA16_Blend:
             self = [super initWithBitmapDataPlanes: nullptr
                                         pixelsWide: width
@@ -153,9 +132,9 @@ enum {
 - (void)requestRenderUpdate;
 
 - (void)showSavePanelTitle:(NSString *)title
-        fileType:(NSString *)fileType
-        accessoryView:(NSView *)view
-        didEndSelector:(SEL)selector;
+                  fileType:(NSArray *)fileType
+             accessoryView:(NSView *)view
+            didEndSelector:(SEL)selector;
 
 - (void)saveImagetoFile:(NSURL*)filename;
 - (void)saveTileImagetoFile:(NSURL*)filename;
@@ -166,16 +145,13 @@ enum {
 + (void)rendererDeleteThread:(id)arg;
 @end
 
+NSString* PrefKeyMovieZoom = @"MovieZoom";
+NSString* PrefKeyMovieLength = @"MovieLength";
+NSString* PrefKeyMovieFrameRate = @"MovieFrameRate";
+NSString* PrefKeyMovieFormat = @"MovieFormat";
 
 namespace {
     NSURL*    saveImageDirectory = nil;
-
-    NSString* PrefKeyMovieZoom = @"MovieZoom";
-    NSString* PrefKeyMovieLength = @"MovieLength";
-    NSString* PrefKeyMovieFrameRate = @"MovieFrameRate";
-    NSString* PrefKeyMovieFormat = @"MovieFormat";
-    NSString* PrefKeyMovieQuality = @"MovieQuality";
-
 
     class RenderParameters
     {
@@ -185,6 +161,7 @@ namespace {
         bool    animate;
         bool    animateZoom;
         int     animateFrameCount;
+        int     animateFrame;
 
         RenderParameters()
             : render(true), periodicUpdate(true), animate(false)
@@ -207,10 +184,6 @@ namespace {
 {
     self = [super initWithFrame:frame];
     if (self) {
-        mEngine = nullptr;
-        mRenderer = nullptr;
-        mCanvas = nullptr;
-        
         mRenderBitmap = nil;
         mDrawingImage = nil;
         mRestartRenderer = false;
@@ -225,8 +198,6 @@ namespace {
         
         mCurrentVariation = 0;
         mIncrementVariationOnRender = false;
-
-        mAnimationCanvas = nullptr;
 
         mTiled = false;
         
@@ -390,7 +361,7 @@ namespace {
     int oy = static_cast<int>(dRect.origin.y = floor((fSize.height - dRect.size.height) * ((CGFloat)0.5)));
 
     if (mTiled && mRenderer && mRenderer->m_tiledCanvas && scale == 1.0) {
-        tileList points = mRenderer->m_tiledCanvas->getTesselation(static_cast<int>(fSize.width), static_cast<int>(fSize.height), ox, oy);
+        tileList points = mRenderer->m_tiledCanvas->getTessellation(static_cast<int>(fSize.width), static_cast<int>(fSize.height), ox, oy);
         
         for (agg::point_i& pt: points) {
             NSPoint dPoint = NSMakePoint(pt.x, pt.y);
@@ -441,15 +412,25 @@ namespace {
     else                [self startRender: sender];
 }
 
-- (IBAction)saveImage:(id)sender
+- (IBAction)saveOutput:(id)sender
 {
-    if (mTiled) {
+    if (mMovieFile) {
+        if (!mMovieFile->written()) {
+            [mDocument noteStatus: @"Movie file is already saved."];
+            NSBeep();
+            return;
+        }
+        [self showSavePanelTitle: NSLocalizedString(@"Save as Animation", @"")
+                        fileType: @[@"mov"]
+                   accessoryView: nil
+                  didEndSelector: @selector(saveMovietoFile:)];
+    } else if (mTiled) {
         [self saveTileImage: sender];
     } else {
         [self showSavePanelTitle: NSLocalizedString(@"Save Image", @"")
-            fileType: @"png"
-            accessoryView: mSaveImageAccessory
-            didEndSelector: @selector(saveImagetoFile:)];
+                        fileType: @[@"png"]
+                   accessoryView: mSaveImageAccessory
+                  didEndSelector: @selector(saveImagetoFile:)];
     }
 }
 
@@ -474,7 +455,7 @@ namespace {
     }
     
     [self showSavePanelTitle: NSLocalizedString(@"Save Image", @"")
-                    fileType: @"png"
+                    fileType: @[@"png"]
                accessoryView: mSaveTileAccessory
               didEndSelector: @selector(saveTileImagetoFile:)];
 }
@@ -482,20 +463,12 @@ namespace {
 - (IBAction)saveAsSVG:(id)sender
 {
     [self showSavePanelTitle: NSLocalizedString(@"Save as SVG", @"")
-        fileType: @"svg"
-        accessoryView: nil
-        didEndSelector: @selector(saveSvgtoFile:)];
+                    fileType: @[@"svg"]
+               accessoryView: nil
+              didEndSelector: @selector(saveSvgtoFile:)];
 }
 
-- (IBAction)saveAsMovie:(id)sender
-{
-    [self showSavePanelTitle: NSLocalizedString(@"Save as Animation", @"")
-        fileType: @"mov"
-        accessoryView: mSaveAnimationAccessory
-        didEndSelector: @selector(saveMovietoFile:)];
-}
-
-- (BOOL)validateMenuItem:(NSMenuItem *)anItem;
+- (BOOL)validateMenuItem:(NSMenuItem *)anItem
 {
     SEL action = [anItem action];
     
@@ -506,7 +479,8 @@ namespace {
         return YES;
         
     if (action == @selector(showHiresRenderSheet:)
-    ||  action == @selector(repeatRender:))
+    ||  action == @selector(repeatRender:)
+    ||  action == @selector(showAnimateSheet:))
         return !mRendering;
             
     if (action == @selector(finishRender:))
@@ -515,11 +489,12 @@ namespace {
     if (action == @selector(stopRender:))
         return mRendering && !mRendererStopping;
     
-    if (action == @selector(saveImage:)
-    ||  action == @selector(saveAsSVG:)
-    ||  action == @selector(saveAsMovie:)
+    if (action == @selector(saveAsSVG:)
     ||  action == @selector(uploadToGallery:))
         return !mRendering && mRenderBitmap;
+    
+    if (action == @selector(saveOutput:))
+        return !mRendering && (mRenderBitmap || mMovieFile);
             
     return [super validateMenuItem: anItem];
 }
@@ -527,6 +502,16 @@ namespace {
 - (IBAction) showHiresRenderSheet:(id)sender
 {
     [mDocument showHiresRenderSheet: sender];
+}
+
+- (IBAction) showAnimationSheet:(id)sender
+{
+    [mDocument showAnimateSheet: sender];
+}
+
+- (IBAction)showAnimationFrameSheet:(id)sender
+{
+    [mDocument showAnimateFrameSheet: sender];
 }
 
 - (void)redisplayImage:(NSValue*)rectObj
@@ -595,7 +580,7 @@ namespace {
         }
     }
     else {
-        if (mOutputProgress > 0) {
+        if (![mOutputProgress isHidden]) {
             [mOutputProgress setHidden: YES];
             [mTopBar relayout];
             mOutputProgressDelay = 0;
@@ -624,7 +609,7 @@ namespace {
     return (mTiled && mEngine) ? mEngine->isFrieze() : 0;
 }
 
-- (NSData*) pngImageDataCropped:(BOOL)cropped multiplier:(NSSize*) mult;
+- (NSData*) pngImageDataCropped:(BOOL)cropped multiplier:(NSSize*) mult
 {
     NSBitmapImageRep* bits;
     
@@ -636,7 +621,7 @@ namespace {
         fRect.size.width *= mult->width;
         fRect.size.height *= mult->height;
         
-        tileList points = mRenderer->m_tiledCanvas->getTesselation(static_cast<int>(fRect.size.width),
+        tileList points = mRenderer->m_tiledCanvas->getTessellation(static_cast<int>(fRect.size.width),
                                                                    static_cast<int>(fRect.size.height), 0, 0);
         
         NSImage* tileImage = [[NSImage alloc] initWithSize: fRect.size];
@@ -715,6 +700,8 @@ namespace {
         }
         return;
     }
+    
+    mMovieFile.reset();
 
     [self updateVariation: YES];
 
@@ -774,6 +761,8 @@ namespace {
     
     if (mRendering)
         return;
+    
+    mMovieFile.reset();
 
     [self updateVariation: NO];
 
@@ -789,11 +778,82 @@ namespace {
     [self renderBegin: &parameters];
 }
 
+- (void) startAnimation: (NSSize) size
+                minimum: (double) minSize
+                  frame: (float) fr
+{
+    RenderParameters parameters;
+    parameters.render = false;
+    parameters.periodicUpdate = false;
+    parameters.animate = true;
+    parameters.animateFrame = static_cast<int>(fr);
+    
+    NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+    parameters.animateZoom = [defaults boolForKey: PrefKeyMovieZoom] && !mTiled;
+    float movieLength = [defaults floatForKey: PrefKeyMovieLength];
+    NSInteger movieFrameRate = [defaults integerForKey: PrefKeyMovieFrameRate];
+    auto fmt = AVcanvas::H264;
+    switch ([defaults integerForKey: PrefKeyMovieFormat]) {
+        case 2:
+            fmt = AVcanvas::ProRes422;
+            break;
+        case 3:
+            fmt = AVcanvas::ProRes4444;
+            break;
+        default:
+            break;
+    }
+    
+    parameters.animateFrameCount = static_cast<int>(movieLength * movieFrameRate * 0.01);
+    
+    [self buildEngine];
+    if (!mEngine) return;
+    [self buildRendererSize: size minimum: minSize];
+    if (!mRenderer) return;
+    
+    if (parameters.animateFrame == 0) {
+        mRenderSize.width = (CGFloat)mRenderer->m_width;
+        mRenderSize.height = (CGFloat)mRenderer->m_height;
+        mRenderedRect.origin.x = 0.0;
+        mRenderedRect.origin.y = 0.0;
+        mRenderedRect.size = mRenderSize;
+
+        BitmapAndFormat* bits = [BitmapAndFormat alloc];
+        [bits initWithAggPixFmt: aggCanvas::AV_Blend
+                     pixelsWide: (NSInteger)size.width
+                     pixelsHigh: (NSInteger)size.height];
+        if (!bits) {
+            [mDocument noteStatus: @"An error occured while initializing the movie canvas."];
+            NSBeep();
+            return;
+        }
+        
+        mMovieFile = std::make_unique<TempFile>([mDocument system], AbstractSystem::MovieTemp, 0);
+        auto stream = mMovieFile->forWrite();
+        delete stream;  // close the temp file, we need its name
+        NSString* path = [NSString stringWithUTF8String: mMovieFile->name().c_str()];
+        
+        mCanvas = std::make_unique<AVcanvas>(path, [bits autorelease],
+                                             static_cast<int>(movieFrameRate), fmt);
+        
+        if (!mCanvas->mError) {
+            [self renderBegin: &parameters];
+        } else {
+            mCanvas.reset();
+            [mDocument noteStatus: @"An error occured while initializing the movie file."];
+            NSBeep();
+        }
+    } else {
+        mMovieFile.reset();
+        [self buildImageCanvasSize];
+        [self renderBegin: &parameters];
+    }
+}
 
 @end
 
 @implementation GView (renderThread)
-- (void) renderBegin:(RenderParameters*)parameters;
+- (void) renderBegin:(RenderParameters*)parameters
 {
     [self useVariation];
     
@@ -847,24 +907,25 @@ namespace {
 
     if (mEngine && mRenderer && mCanvas) {
         if (parameters.render) 
-            mScale = mRenderer->run(mCanvas, parameters.periodicUpdate);
+            mScale = mRenderer->run(mCanvas.get(), parameters.periodicUpdate);
         else if (parameters.animate) {
-            qtCanvas* qt = dynamic_cast<qtCanvas*> (mCanvas);
-            assert(qt);
-            qt->enterThread();
-            mRenderer->animate(mCanvas,
-                               parameters.animateFrameCount, 
+            assert(parameters.animateFrame  > 0 || dynamic_cast<AVcanvas*>(mCanvas.get()));
+            assert(parameters.animateFrame == 0 || dynamic_cast<ImageCanvas*>(mCanvas.get()));
+            mRenderer->animate(mCanvas.get(),
+                               parameters.animateFrameCount,
+                               parameters.animateFrame,
                                parameters.animateZoom);
-            qt->exitThread();
+            if (mCanvas->mError)
+                NSBeep();
         }
         else {
-            mRenderer->draw(mCanvas);
+            mRenderer->draw(mCanvas.get());
             [mDocument performSelectorOnMainThread: @selector(noteStatus:)
                                         withObject: @"Drawing operation complete"
                                      waitUntilDone: NO];
         }
         
-        if (ImageCanvas* ic = dynamic_cast<ImageCanvas*>(mCanvas))
+        if (ImageCanvas* ic = dynamic_cast<ImageCanvas*>(mCanvas.get()))
             mCanvasColor256 = ic->colorCount256();
     }
     
@@ -889,8 +950,7 @@ namespace {
     mRendererFinishing = false;
     mRendererStopping = false;
 
-    delete mCanvas;
-    mCanvas = nullptr;
+    mCanvas.reset();
     
 #ifndef PROGRESS_ANIMATE_DIRECTLY
     [mProgress stopAnimation: self];
@@ -1059,12 +1119,14 @@ namespace {
 {
     if (!mEngine) return;
     
-    assert(mRenderer == nullptr);
-    mRenderer = mEngine->renderer(
+    assert(!mRenderer);
+    mRenderer.reset(mEngine->renderer(mEngine,
         (int)size.width, (int)size.height,
         minSize,
         mCurrentVariation,
-        [[NSUserDefaults standardUserDefaults] floatForKey: @"BorderSize"]);
+        [[NSUserDefaults standardUserDefaults] floatForKey: @"BorderSize"]));
+    if (!mRenderer)
+        mEngine.reset();
 }
 
 - (void)buildImageCanvasSize
@@ -1072,7 +1134,7 @@ namespace {
     if (!mRenderer || !mEngine) return;
     
     BitmapAndFormat* bm = [[BitmapAndFormat alloc] 
-                             initWithAggPixFmt: aggCanvas::SuggestPixelFormat(mEngine)
+                             initWithAggPixFmt: aggCanvas::SuggestPixelFormat(mEngine.get())
                                     pixelsWide: mRenderer->m_width
                                     pixelsHigh: mRenderer->m_height];
     
@@ -1088,7 +1150,7 @@ namespace {
     mRenderedRect.origin.y = 0.0;
     mRenderedRect.size = mRenderSize;
 
-    mCanvas = new ImageCanvas(self, mRenderBitmap, [bm aggPixelFormat]);
+    mCanvas = std::make_unique<ImageCanvas>(self, mRenderBitmap, [bm aggPixelFormat]);
 
     mTiled = mEngine->isTiled() || mEngine->isFrieze() != CFDG::no_frieze;
 }
@@ -1129,12 +1191,12 @@ namespace {
 }
 
 - (void)showSavePanelTitle:(NSString *)title
-        fileType:(NSString *)fileType
+        fileType:(NSArray *)fileTypes
         accessoryView:(NSView *)view
         didEndSelector:(SEL)selector
 {
     NSSavePanel *sp = [NSSavePanel savePanel];
-    [sp setAllowedFileTypes: [NSArray arrayWithObject: fileType]];
+    [sp setAllowedFileTypes: fileTypes];
     [sp setTitle: title];
     [sp setAccessoryView: view];
     [sp setCanSelectHiddenExtension: YES];
@@ -1216,15 +1278,16 @@ namespace {
 
 - (void)saveSvgtoFile:(NSURL*)filename
 {
-    mCanvas = new SVGCanvas([[filename path] UTF8String],
+    mCanvas = std::make_unique<SVGCanvas>(
+        [[filename path] UTF8String],
         (int)mRenderedRect.size.width, (int)mRenderedRect.size.height,
-        false);
+        false
+    );
     
     if (mCanvas->mError) {
         [mDocument noteStatus: @"An error occured while writing the SVG file."];
         NSBeep();
-        delete mCanvas;
-        mCanvas = nullptr;
+        mCanvas.reset();
         return;
     }
     
@@ -1240,58 +1303,42 @@ namespace {
 
 - (void)saveMovietoFile:(NSURL*)filename
 {
-    RenderParameters parameters;
-    parameters.render = false;
-    parameters.periodicUpdate = false;
-    parameters.animate = true;
-
-    NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
-    parameters.animateZoom = [defaults boolForKey: PrefKeyMovieZoom] && !mTiled;
-    float movieLength = [defaults floatForKey: PrefKeyMovieLength];
-    NSInteger movieFrameRate = [defaults integerForKey: PrefKeyMovieFrameRate];
-    bool mpeg4 = (bool)[defaults integerForKey: PrefKeyMovieFormat];
-    int qual = (int)[defaults floatForKey: PrefKeyMovieQuality];
-    
-    parameters.animateFrameCount = static_cast<int>(movieLength * movieFrameRate * 0.01);
-    
-    NSSize* sz = mTiled ? &mRenderedRect.size : &mRenderSize;
-    
-    BitmapAndFormat* bits = [BitmapAndFormat alloc];
-    [bits initWithAggPixFmt: aggCanvas::RGBA8_Blend
-                 pixelsWide: (NSInteger)sz->width
-                 pixelsHigh: (NSInteger)sz->height];
-    if (!bits) {
-        [mDocument noteStatus: @"An error occured while initializing the movie canvas."];
+    if (!mMovieFile) {
+        [mDocument noteStatus: @"There is no movie to save."];
+        NSBeep();
+        return;
+    }
+    if (!mMovieFile->written()) {
+        [mDocument noteStatus: @"Movie file is already saved."];
         NSBeep();
         return;
     }
     
-    mAnimationCanvas = new qtCanvas([filename path], [bits autorelease],
-                                    static_cast<int>(movieFrameRate), qual, mpeg4);
-    
-    bool movieOK = mAnimationCanvas->getError() == nil;
-    if (movieOK) {
-        mCanvas = mAnimationCanvas;
-        mAnimationCanvas = nullptr;
-        
-        [self renderBegin: &parameters];
+    NSError* fileErr = nil;
+    NSString* tempPath = [NSString stringWithUTF8String: mMovieFile->name().c_str()];
+    NSURL* tempURL = [NSURL fileURLWithPath: tempPath];
+    if ([[NSFileManager defaultManager] moveItemAtURL:tempURL
+                                                toURL:filename
+                                                error:&fileErr])
+    {
+        mMovieFile->release();
     } else {
-        delete mAnimationCanvas;
-        mAnimationCanvas = nullptr;
-        [mDocument noteStatus: @"An error occured while initializing the movie file."];
+        [mDocument noteStatus: @"Movie save failed."];
         NSBeep();
     }
 }
 
 - (void)deleteRenderer
 {
-    mEngine = nullptr;
-    if (mRenderer == nullptr) return;
+    mEngine.reset();
+    mMovieFile.reset();
+    mCanvas.reset();
+    if (!mRenderer) return;
 #ifdef EXTREME_PARAM_DEBUG
-    delete mRenderer; mRenderer = nullptr;
+    mRenderer.reset();
 #else
-    NSValue* r = [NSValue valueWithPointer: (const void*)mRenderer];
-    mRenderer = nullptr;
+    NSValue* r = [NSValue valueWithPointer: (const void*)mRenderer.get()];
+    mRenderer.release();
     [NSThread detachNewThreadSelector:@selector(rendererDeleteThread:) toTarget:[GView class] withObject:r];
 #endif
 }

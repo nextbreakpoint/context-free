@@ -37,7 +37,7 @@ abstractPngCanvas::abstractPngCanvas(const char* outfilename, bool quiet, int wi
                                      aggCanvas::PixelFormat pixfmt, bool crop, int frameCount,
                                      int variation, bool wallpaper, Renderer *r, int mx, int my)
 : aggCanvas(pixfmt), mOutputFileName(outfilename), mFrameCount(frameCount), 
-  mCurrentFrame(0), mVariation(variation), mPixelFormat(pixfmt),
+  mCurrentFrame(1), mVariation(variation), mPixelFormat(pixfmt),
   mCrop(crop), mQuiet(quiet), mWallpaper(wallpaper), mRenderer(r), mFullWidth(width), 
   mFullHeight(height), mOriginX(0), mOriginY(0)
 {
@@ -67,7 +67,7 @@ abstractPngCanvas::abstractPngCanvas(const char* outfilename, bool quiet, int wi
 #ifdef _WIN32
     mStride += ((-mStride) & 3);
 #endif
-    mData.reset(new unsigned char[mStride * mFullHeight]);
+    mData = std::make_unique<unsigned char[]>(mStride * mFullHeight);
     attach(mData.get() + mOriginY * mStride + mOriginX * bpp, mWidth, mHeight, mStride);
 
     if (quiet) return;
@@ -93,8 +93,8 @@ abstractPngCanvas::end()
     aggCanvas::end();
     
     if (mRenderer && mRenderer->m_tiledCanvas) {
-        tileList points = mRenderer->m_tiledCanvas->getTesselation(mFullWidth, mFullHeight,
-                                                                   mOriginX, mOriginY, true);
+        tileList points = mRenderer->m_tiledCanvas->getTessellation(mFullWidth, mFullHeight,
+                                                                    mOriginX, mOriginY, true);
         std::reverse(points.begin(), points.end());     // could use reverse adapter
         
         for (auto&& pt: points) {

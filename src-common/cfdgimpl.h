@@ -42,27 +42,27 @@
 #include "shape.h"
 #include "astreplacement.h"
 #include "config.h"
+#include "stacktype.h"
 
 class CFDGImpl : public CFDG {
     enum consts_t: unsigned { NoParameter = static_cast<unsigned>(-1) };
     public:
         enum {newShape = 0, ruleType = 1, pathType = 2};
-        std::deque<const StackRule*>  mLongLivedParams;
     private:
-        class LLPdeleter {
-            friend CFDGImpl;
-            CFDGImpl* parent;
-            
-            LLPdeleter(CFDGImpl* p) : parent(p) { }
-            ~LLPdeleter() {
-                for (auto&& param : parent->mLongLivedParams) {
-                    delete[] param;
-                    --Renderer::ParamCount;
+        struct PostDtorCleanup {
+            AbstractSystem* msys;
+            PostDtorCleanup(AbstractSystem* s) : msys(s) {}
+            ~PostDtorCleanup() {
+    #ifdef EXTREME_PARAM_DEBUG
+                for (auto &p: StackRule::ParamMap) {
+                    if (p.second > 0)
+                        msys->message("Parameter at %p is still alive, it is param number %d\n", p.first, p.second);
                 }
+    #endif
             }
         };
-        LLPdeleter                      mCleanupLLP;
     
+        PostDtorCleanup mPostDtorCleanup;
         agg::rgba m_backgroundColor;
     
         int mStackSize;
@@ -84,10 +84,10 @@ class CFDGImpl : public CFDG {
             ShapeType(ShapeType&& from) noexcept = default;
             ShapeType& operator=(ShapeType&& from) noexcept(std::is_nothrow_move_assignable<std::string>::value)
             {
-                name = from.name;
+                name = std::move(from.name);
                 hasRules = from.hasRules;
                 isShape = from.isShape;
-                parameters.reset(from.parameters.release());
+                parameters = std::move(from.parameters);
                 argSize = from.argSize;
                 shouldHaveNoParams = from.shouldHaveNoParams;
                 return *this;
@@ -98,8 +98,6 @@ class CFDGImpl : public CFDG {
         
         std::vector<ShapeType> m_shapeTypes;
     
-        Shape m_initialShape;
-
     public:
         AST::rep_ptr mInitShape;
         std::vector<AST::ASTrule*> mRules;
@@ -125,7 +123,7 @@ class CFDGImpl : public CFDG {
         CFDGImpl(AbstractSystem*);
         ~CFDGImpl() override;
         
-        Renderer* renderer(
+        Renderer* renderer(const cfdg_ptr& ptr,
                 int width, int height, double minSize,
                 int variation, double border = 2.0) override;
         
@@ -145,7 +143,7 @@ class CFDGImpl : public CFDG {
     public:
         AbstractSystem* system() { return m_system; }
         
-        const Shape& getInitialShape(RendererAST* r);
+        Shape getInitialShape(RendererAST* r);
     
         RGBA8 getColor(const HSBColor& hsb);
         
@@ -173,13 +171,13 @@ class CFDGImpl : public CFDG {
 
         enum Parameter {Color = 1, Alpha = 2, Time = 4, FrameTime = 8};
         void addParameter(Parameter);
-        bool addParameter(std::string name, AST::exp_ptr e, unsigned depth);
+        void addParameter(CFG var, AST::exp_ptr e, unsigned depth);
 
         AST::ASTrepContainer    mCFDGcontents;
     
         std::list<std::string> fileNames;
 };
 
-typedef std::unique_ptr<CFDGImpl> cfdgi_ptr;
+using cfdgi_ptr = std::shared_ptr<CFDGImpl>;
 
 #endif // INCLUDE_CFDGIMPL_H

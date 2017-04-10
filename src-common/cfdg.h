@@ -77,7 +77,7 @@ private:
 
 class AbstractSystem {
     public:
-        enum TempType { ShapeTemp = 0, ExpensionTemp = 1, MergeTemp = 2, NumberofTempTypes = 3 };
+        enum TempType { ShapeTemp = 0, ExpansionTemp = 1, MergeTemp = 2, MovieTemp = 3, NumberofTempTypes = 4 };
         enum SystemSize : std::uint64_t {
 #if defined(_WIN64) || defined(__x86_64__)
             MaximumMemory = 17179869184ULL,     // 16GB
@@ -116,11 +116,21 @@ class AbstractSystem {
             clock_t outputTime;
 
             bool    animating;      // inside the animation loop
+            AbstractSystem* mSystem;
 
             Stats()
                 : shapeCount(0), toDoCount(0), inOutput(false),
                   fullOutput(false), finalOutput(false), showProgress(false),
-                  outputCount(0), outputDone(0), outputTime(0), animating(false) {}
+                  outputCount(0), outputDone(0), outputTime(0), animating(false),
+                  mSystem(nullptr) {}
+            ~Stats()
+            {
+                // Cancel system progress bar if it is being displayed
+                if (mSystem && (showProgress || inOutput)) {
+                    showProgress = inOutput = false;
+                    mSystem->stats(*this);
+                }
+            }
         };
 
         virtual void orphan() = 0;
@@ -130,8 +140,10 @@ class AbstractSystem {
         virtual ~AbstractSystem();
     protected:
         static const char* TempPrefixes[NumberofTempTypes];
+        static const char* TempSuffixes[NumberofTempTypes];
         static const char* TempPrefixAll;
         static const wchar_t* TempPrefixes_w[NumberofTempTypes];
+        static const wchar_t* TempSuffixes_w[NumberofTempTypes];
         static const wchar_t* TempPrefixAll_w;
         virtual void clearAndCR() {};
 };
@@ -157,14 +169,17 @@ class Canvas {
 };
 
 class Renderer;
+class CFDG;
+
+using cfdg_ptr = std::shared_ptr<CFDG>;
 
 class CFDG {
     public:
         enum frieze_t { no_frieze = 0, frieze_x, frieze_y };
-        static CFDG* ParseFile(const char* fname, AbstractSystem*, int variation);
+        static cfdg_ptr ParseFile(const char* fname, AbstractSystem*, int variation);
         virtual ~CFDG();
 
-        virtual Renderer* renderer(
+        virtual Renderer* renderer(const cfdg_ptr& ptr,
                 int width, int height, double minSize,
                 int variation, double border = 2.0
             ) = 0;
@@ -176,6 +191,7 @@ class CFDG {
         bool usesTime;
         bool usesFrameTime;
         static const CfgArray<std::string>  ParamNames;
+        static CFG lookupCfg(const std::string& name);
         virtual bool isTiled(agg::trans_affine* tr = nullptr, double* x = nullptr, double* y = nullptr) const = 0;
         virtual frieze_t isFrieze(agg::trans_affine* tr = nullptr, double* x = nullptr, double* y = nullptr) const = 0;
         virtual bool isSized(double* x = nullptr, double* y = nullptr) const = 0;
@@ -201,7 +217,7 @@ class Renderer {
 
         virtual double run(Canvas* canvas, bool partialDraw) = 0;
         virtual void draw(Canvas* canvas) = 0;
-        virtual void animate(Canvas* canvas, int frames, bool zoom) = 0;
+        virtual void animate(Canvas* canvas, int frames, int frame, bool zoom) = 0;
 
         volatile bool requestStop;     // stop ASAP
         volatile bool requestFinishUp; // stop expanding, and do final output

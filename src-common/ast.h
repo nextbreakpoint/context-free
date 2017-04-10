@@ -76,6 +76,8 @@ namespace AST {
     using ASTtermArray  = std::vector<term_ptr>;
     using ASTparameters = std::vector<ASTparameter>;
     
+    using exp_list      = std::initializer_list<ASTexpression*>;
+    
     enum expType {
         NoType = 0, NumericType = 1, ModType = 2, RuleType = 4, FlagType = 8,
         ReuseType = 16
@@ -115,7 +117,7 @@ namespace AST {
         ASTparameter(const std::string& typeName, int nameIndex,
                      const yy::location& where);
         ASTparameter(int nameIndex, ASTdefine* def, const yy::location& where);
-        ASTparameter(int nameIndex, bool natural, bool local, const yy::location& where);
+        ASTparameter(int nameIndex, const yy::location& where);
                 // ctor for loop variables
         ASTparameter(const ASTparameter&);
                 // ctor for copying parameter lists, never used after definitions are added

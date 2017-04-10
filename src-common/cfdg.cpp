@@ -71,6 +71,16 @@ const CfgArray<std::string> CFDG::ParamNames = {
     "CF::Time"
 };
 
+CFG
+CFDG::lookupCfg(const std::string& name)
+{
+    auto nameIt = std::find(ParamNames.begin(), ParamNames.end(), name);
+    if (nameIt == ParamNames.end())
+        return CFG::Unknown;
+    
+    return static_cast<CFG>(nameIt - ParamNames.begin());
+}
+
 CfdgError::CfdgError(const yy::location& loc, const char* msg)
 : where(loc), mMsg(msg)
 {
@@ -123,11 +133,17 @@ CfdgError::Warning(const yy::location& errLoc, const char* msg)
 }
 
 const char* AbstractSystem::TempPrefixes[AbstractSystem::NumberofTempTypes] = {
-    "cfdg-temp-fin-", "cfdg-temp-unfin-", "cfdg-temp-mrg-"
+    "cfdg-temp-fin-", "cfdg-temp-unfin-", "cfdg-temp-mrg-", "cfdg-temp-movie-"
+};
+const char* AbstractSystem::TempSuffixes[AbstractSystem::NumberofTempTypes] = {
+    "", "", "", ".mov"
 };
 const char* AbstractSystem::TempPrefixAll = "cfdg-temp-";
 const wchar_t* AbstractSystem::TempPrefixes_w[AbstractSystem::NumberofTempTypes] = {
-    L"cfdg-temp-fin-", L"cfdg-temp-unfin-", L"cfdg-temp-mrg-"
+    L"cfdg-temp-fin-", L"cfdg-temp-unfin-", L"cfdg-temp-mrg-", L"cfdg-temp-movie"
+};
+const wchar_t* AbstractSystem::TempSuffixes_w[AbstractSystem::NumberofTempTypes] = {
+    L"", L"", L"", L".mov"
 };
 const wchar_t* AbstractSystem::TempPrefixAll_w = L"cfdg-temp-";
 
@@ -158,14 +174,14 @@ Renderer::~Renderer() = default;
 CFDG::~CFDG() = default;
 
 
-CFDG*
+cfdg_ptr
 CFDG::ParseFile(const char* fname, AbstractSystem* system, int variation)
 {
     cfdgi_ptr pCfdg;
     for (int version = 2; version <= 3; ++version) {
         if (!pCfdg)
-            pCfdg.reset(new CFDGImpl(system));
-        Builder b(std::move(pCfdg), variation);
+            pCfdg = std::make_unique<CFDGImpl>(system);
+        Builder b(pCfdg, variation);
 
         yy::Scanner lexer;
         b.lexer = &lexer;
@@ -191,9 +207,9 @@ CFDG::ParseFile(const char* fname, AbstractSystem* system, int variation)
 #endif
             auto dirptr = b.m_currentPath->find_last_of(dirchar);
             if (dirptr == std::string::npos)
-                b.m_basePath.reset(new std::string(*b.m_currentPath));
+                b.m_basePath = std::make_unique<std::string>(*b.m_currentPath);
             else
-                b.m_basePath.reset(new std::string(*b.m_currentPath, 0, dirptr+1));
+                b.m_basePath = std::make_unique<std::string>(*b.m_currentPath, 0, dirptr+1);
         }
         b.m_filesToLoad.push(b.m_currentPath);
         b.m_streamsToLoad.push(std::move(input));
@@ -222,7 +238,6 @@ CFDG::ParseFile(const char* fname, AbstractSystem* system, int variation)
             b.m_CFDG->rulesLoaded();
             if (b.mErrorOccured)
                 return nullptr;
-            pCfdg = std::move(b.m_CFDG);
             break;
         }
         if (lexer.maybeVersion == 0 || 
@@ -236,5 +251,5 @@ CFDG::ParseFile(const char* fname, AbstractSystem* system, int variation)
     if (pCfdg)
         system->message("%d rules loaded", pCfdg->numRules());
     
-    return pCfdg.release();
+    return cfdg_ptr(pCfdg);
 }

@@ -76,7 +76,7 @@ StackRule*
 StackRule::alloc(int name, int size, const AST::ASTparameters* ti)
 {
     ++Renderer::ParamCount;
-    StackType* newrule = reinterpret_cast<StackType*>(new double[size ? size + HeaderSize : 1]);
+    StackType* newrule = size ? new StackType[size + HeaderSize] : new StackType;
     assert((reinterpret_cast<intptr_t>(newrule) & 3) == 0);   // confirm 32-bit alignment
     newrule[0].ruleHeader.mRuleName = static_cast<int16_t>(name);
     newrule[0].ruleHeader.mRefCount = 0;
@@ -92,21 +92,15 @@ StackRule::alloc(int name, int size, const AST::ASTparameters* ti)
 }
 
 StackRule*
-StackRule::alloc(const StackRule* from)
+StackRule::alloc(const StackRule* from, int newName)
 {
     if (from == nullptr)
         return nullptr;
     const StackType* src = reinterpret_cast<const StackType*>(from);
     const AST::ASTparameters* ti = from->mParamCount ? src[1].typeInfo : nullptr;
-    StackRule* ret = alloc(from->mRuleName, from->mParamCount, ti);
-#ifdef EXTREME_PARAM_DEBUG
-    ParamMap[ret] = ++ParamUID;
-    if (ParamUID == ParamOfInterest)
-        ParamMap[ret] = ParamOfInterest;
-#endif
+    StackRule* ret = alloc(newName >= 0 ? newName : from->mRuleName, from->mParamCount, ti);
     if (ret->mParamCount) {
         StackType* data = reinterpret_cast<StackType*>(ret);
-        data[1].typeInfo = ti;
         from->copyParams(data + HeaderSize);
     }
     return ret;
@@ -140,8 +134,12 @@ StackRule::copyParams(StackType* dest) const
 
 // Release arguments on the heap
 void
-StackRule::release() const
+StackRule::release() const noexcept
 {
+    assert(mRefCount > 0);
+    if (mRefCount < MaxRefCount)
+        --mRefCount;
+    
 #ifdef EXTREME_PARAM_DEBUG
     auto f = ParamMap.find(this);
     assert(f != ParamMap.end());
@@ -151,25 +149,24 @@ StackRule::release() const
         (*f).second = ParamOfInterest;
 #endif
     if (mRefCount == 0) {
-        if (mParamCount) {
-            const StackType* data = reinterpret_cast<const StackType*>(this);
-            data[HeaderSize].release(data[1].typeInfo);
-        }
+        const StackType* data = reinterpret_cast<const StackType*>(this);
+        if (mParamCount)
+            data[HeaderSize].destroy(data[1].typeInfo);
 #ifdef EXTREME_PARAM_DEBUG
         (*f).second = -n;
 #endif
         --Renderer::ParamCount;
-        delete[] this;
+        if (mParamCount)
+            delete[] data;
+        else
+            delete data;
         return;
     }
-    
-    if (mRefCount < MaxRefCount)
-        --mRefCount;
 }
 
 // Release arguments on the stack
 void
-StackType::release(const AST::ASTparameters* p) const
+StackType::destroy(const AST::ASTparameters* p) const
 {
     for (const_iterator it = begin(p), e = end(); it != e; ++it)
         if (it.type().mType == AST::RuleType)
@@ -177,7 +174,7 @@ StackType::release(const AST::ASTparameters* p) const
 }
 
 void
-StackRule::retain() const
+StackRule::retain() const noexcept
 {
 #ifdef EXTREME_PARAM_DEBUG
     auto f = ParamMap.find(this);
@@ -218,16 +215,16 @@ StackRule::read(std::istream& is)
     is.read(reinterpret_cast<char*>(&(st[1].typeInfo)), sizeof(AST::ASTparameters*));
     for (iterator it = begin(), e = end(); it != e; ++it) {
         switch (it.type().mType) {
-        case AST::NumericType:
-        case AST::ModType:
-            is.read(reinterpret_cast<char*>(&*it), it.type().mTuplesize * sizeof(StackType));
-            break;
-        case AST::RuleType:
-            new (&(it->rule)) param_ptr(Read(is));
-            break;
-        default:
-            assert(false);
-            break;
+            case AST::NumericType:
+            case AST::ModType:
+                is.read(reinterpret_cast<char*>(&*it), it.type().mTuplesize * sizeof(StackType));
+                break;
+            case AST::RuleType:
+                new (&(it->rule)) param_ptr(Read(is));
+                break;
+            default:
+                assert(false);
+                break;
         }
     }
 }
@@ -245,16 +242,16 @@ StackRule::write(std::ostream& os) const
     os.write(reinterpret_cast<const char*>(&(st[1].typeInfo)), sizeof(AST::ASTparameters*));
     for (const_iterator it = begin(), e = end(); it != e; ++it) {
         switch (it.type().mType) {
-        case AST::NumericType:
-        case AST::ModType:
-            os.write(reinterpret_cast<const char*>(&*it), it.type().mTuplesize * sizeof(StackType));
-            break;
-        case AST::RuleType:
-            Write(os, it->rule.get());
-            break;
-        default:
-            assert(false);
-            break;
+            case AST::NumericType:
+            case AST::ModType:
+                os.write(reinterpret_cast<const char*>(&*it), it.type().mTuplesize * sizeof(StackType));
+                break;
+            case AST::RuleType:
+                Write(os, it->rule.get());
+                break;
+            default:
+                assert(false);
+                break;
         }
     }
 }

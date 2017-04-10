@@ -60,7 +60,7 @@ namespace AST {
         ASTreplacement(const ASTreplacement&) = delete;
         ASTreplacement(ASTruleSpecifier&& shapeSpec, mod_ptr mods,
                        const yy::location& loc = CfdgError::Default,
-                       repElemListEnum t = replacement);
+                       repElemListEnum t = replacement) noexcept;
         ASTreplacement(mod_ptr mods, const yy::location& loc = CfdgError::Default,
                        repElemListEnum t = replacement);
         ASTreplacement(const std::string& s, const yy::location& loc);
@@ -75,11 +75,10 @@ namespace AST {
         ASTbody mBody;
         ASTparameters mParameters;
         bool isGlobal;
-        unsigned mStackCount;
         
         ASTrepContainer() 
         : mPathOp(unknownPathop), mRepType(ASTreplacement::empty),
-          isGlobal(false), mStackCount(0) {};
+          isGlobal(false) {};
         ASTrepContainer(const ASTrepContainer&) = delete;
         ASTrepContainer& operator=(const ASTrepContainer&) = delete;
         ASTrepContainer(ASTrepContainer&&) = delete;
@@ -99,8 +98,7 @@ namespace AST {
                           const yy::location& typeLoc, const yy::location& nameLoc);
         ASTparameter& addDefParameter(int index, ASTdefine* def,
                           const yy::location& nameLoc, const yy::location& expLoc);
-        void addLoopParameter(int index, bool natural, bool local,
-                              const yy::location& nameLoc);
+        void addLoopParameter(int index, const yy::location& nameLoc);
     };
     class ASTloop: public ASTreplacement {
     public:
@@ -148,10 +146,18 @@ namespace AST {
     };
     class ASTswitch: public ASTreplacement {
     public:
-        using switchMap = std::map<int, cont_ptr>;
+        using caseType = std::int64_t;
+        using caseRange = std::pair<caseType, caseType>;
+        struct compareRange {
+            bool operator()(const caseRange& a, const caseRange& b) const {
+                return a.second < b.first;
+            }
+        };
+        using switchMap = std::map<caseRange, const ASTrepContainer*, compareRange>;
         
         exp_ptr mSwitchExp;
-        switchMap mCaseStatements;
+        switchMap mCaseMap;
+        std::vector<std::pair<exp_ptr, cont_ptr>> mCases;
         ASTrepContainer mElseBody;
         
         ASTswitch(exp_ptr switchExp, const yy::location& expLoc);
@@ -170,11 +176,11 @@ namespace AST {
         AST::expType mType;
         bool isNatural;
         ASTparameters mParameters;
-        unsigned mStackCount;
+        unsigned mParamSize;
         std::string mName;
         int mConfigDepth;
         
-        ASTdefine(const std::string& name, const yy::location& loc);
+        ASTdefine(std::string&& name, const yy::location& loc);
         void traverse(const Shape& parent, bool tr, RendererAST* r) const override;
         void compile(CompilePhase ph) override;
         ~ASTdefine() override = default;
@@ -205,6 +211,7 @@ namespace AST {
         ASTrule(int i);
         ~ASTrule() override;
         void traversePath(const Shape& parent, RendererAST* r) const;
+        void traverseRule(Shape& parent, RendererAST* r) const;
         void traverse(const Shape& parent, bool tr, RendererAST* r) const override;
         void compile(CompilePhase ph) override;
     };

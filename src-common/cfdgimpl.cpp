@@ -54,7 +54,7 @@ using namespace AST;
 
 
 CFDGImpl::CFDGImpl(AbstractSystem* m)
-: mCleanupLLP(this), m_backgroundColor(1, 1, 1, 1), mStackSize(0),
+: mPostDtorCleanup(m), m_backgroundColor(1, 1, 1, 1), mStackSize(0),
   mInitShape(nullptr), m_system(m), m_Parameters(0),
   ParamDepth({NoParameter}),
   mTileOffset(0, 0), needle(0, CfdgError::Default)
@@ -66,26 +66,26 @@ CFDGImpl::CFDGImpl(AbstractSystem* m)
         assert(num >= 0 && num < primShape::numTypes && primShape::shapeNames[num] == name);
     }
     
+    string pi_name("\xcf\x80");           // UTF8-encoded pi symbol
+    int pi_num = encodeShapeName(pi_name);
+    def_ptr pi = std::make_unique<ASTdefine>(std::move(pi_name), CfdgError::Default);
+    pi->mExpression = std::make_unique<ASTreal>(M_PI, CfdgError::Default);
+    pi->mShapeSpec.shapeType = pi_num;
+    mCFDGcontents.addDefParameter(pi_num, pi.get(), CfdgError::Default, CfdgError::Default);
+    mCFDGcontents.mBody.push_back(std::move(pi));
+    
     mCFDGcontents.isGlobal = true;
-}
-
-CFDGImpl::~CFDGImpl()
-{
-    // Release everything owned by the long-lived params
-    for (auto&& param: mLongLivedParams) {
-        for (auto it = param[0].begin(), e = param[0].end(); it != e; ++it) {
-            if (it.type().mType == AST::RuleType)
-                it->rule.~param_ptr();
-        }
-        if (Renderer::AbortEverything) return;
-    }
 #ifdef EXTREME_PARAM_DEBUG
     StackRule::ParamMap.clear();
     StackRule::ParamUID = 0;
 #endif
 }
 
-const Shape&
+CFDGImpl::~CFDGImpl()
+{
+}
+
+Shape
 CFDGImpl::getInitialShape(RendererAST* r)
 {
     Shape init;
@@ -95,8 +95,7 @@ CFDGImpl::getInitialShape(RendererAST* r)
     mInitShape->replace(init, r);
     init.mWorldState.m_transform.tx += mTileOffset.x;
     init.mWorldState.m_transform.ty += mTileOffset.y;
-    m_initialShape = std::move(init);
-    return m_initialShape; 
+    return init;
 }
 
 const agg::rgba&
@@ -334,23 +333,13 @@ CFDGImpl::hasParameter(CFG name) const
     return ParamExp[name].get();
 }
 
-bool
-CFDGImpl::addParameter(std::string name, exp_ptr e, unsigned depth)
+void
+CFDGImpl::addParameter(CFG var, exp_ptr e, unsigned depth)
 {
-    size_t varNum = 0;
-    for (; varNum < ParamNames.size(); ++varNum)
-        if (name == ParamNames[varNum])
-            break;
-    if (varNum >= ParamNames.size())
-        return false;
-    
-    CFG var = static_cast<CFG>(varNum);
-
     if (depth < ParamDepth[var]) {
         ParamDepth[var] = depth;
         ParamExp[var] = std::move(e);
     }
-    return true;
 }
 
 void
@@ -519,7 +508,7 @@ CFDGImpl::setShapeParams(int shapetype, AST::ASTrepContainer& p, int argSize, bo
     if (shape.shapeType != newShape)
         return "Shape name already in use by another rule or path";
     
-    shape.parameters.reset(new AST::ASTparameters(p.mParameters));
+    shape.parameters = std::make_unique<AST::ASTparameters>(p.mParameters);
     shape.isShape = true;
     shape.argSize = argSize;
     shape.shapeType = isPath ? pathType : newShape;
@@ -579,7 +568,7 @@ CFDGImpl::findFunction(int nameIndex)
 }
 
 Renderer*
-CFDGImpl::renderer(int width, int height, double minSize,
+CFDGImpl::renderer(const cfdg_ptr& ptr, int width, int height, double minSize,
                     int variation, double border)
 {
     ASTexpression* startExp = ParamExp[CFG::StartShape].get();
@@ -592,7 +581,7 @@ CFDGImpl::renderer(int width, int height, double minSize,
 
     if (ASTstartSpecifier* startSpec = dynamic_cast<ASTstartSpecifier*>(startExp)) {
         ParamExp[CFG::StartShape].release();
-        mInitShape.reset(new ASTreplacement(std::move(*startSpec), std::move(startSpec->mModification)));
+        mInitShape = std::make_unique<ASTreplacement>(std::move(*startSpec), std::move(startSpec->mModification));
         mInitShape->mChildChange.addEntropy(mInitShape->mShapeSpec.entropyVal);
     } else {
         CfdgError err(startExp->where, "Type error in startshape");
@@ -603,7 +592,7 @@ CFDGImpl::renderer(int width, int height, double minSize,
 
     std::unique_ptr<RendererImpl> r;
     try {
-        r.reset(new RendererImpl(this, width, height, minSize, variation, border));
+        r = std::make_unique<RendererImpl>(ptr, width, height, minSize, variation, border);
         Modification tiled;
         Modification sized;
         Modification timed;
@@ -621,7 +610,37 @@ CFDGImpl::renderer(int width, int height, double minSize,
             mSizeMod.m_transform.tx = mSizeMod.m_transform.ty = 0.0;
         }
         if (hasParameter(CFG::Time, timed, nullptr)) {
+            if (timed.m_time.tend <= timed.m_time.tbegin ||
+                !myfinite(timed.m_time.tbegin) ||
+                !myfinite(timed.m_time.tend) ||
+                !myfinite(timed.m_time.st))
+            {
+                yy::location loc;
+                hasParameter(CFG::Time, AST::ModType, loc);
+                CfdgError err(loc, "Illegal CF::Time specification");
+                m_system->error();
+                m_system->syntaxError(err);
+                return nullptr;
+            }
             mTimeMod = timed;
+            double frame_v, ftime_v;
+            bool frame = hasParameter(CFG::Frame, frame_v, nullptr);
+            bool ftime = hasParameter(CFG::FrameTime, ftime_v, nullptr);
+            if (frame || ftime) {
+                if (frame && ftime) {
+                    m_system->message("It is not necessary to specify both CF::Frame and CF::FrameTime");
+                } else if (frame) {
+                    ftime_v = (timed.m_time.tend - timed.m_time.tbegin) * frame_v + timed.m_time.tbegin;
+                    exp_ptr e = std::make_unique<AST::ASTreal>(ftime_v, CfdgError::Default);
+                    addParameter(CFG::FrameTime, std::move(e), 0);
+                    m_system->message("Setting CF::FrameTime to %f from CF::Frame", ftime_v);
+                } else /* if (ftime) */ {
+                    frame_v = (ftime_v - timed.m_time.tbegin) / (timed.m_time.tend - timed.m_time.tbegin);
+                    exp_ptr e = std::make_unique<AST::ASTreal>(frame_v, CfdgError::Default);
+                    addParameter(CFG::Frame, std::move(e), 0);
+                    m_system->message("Setting CF::Frame to %f from CF::FrameTime", frame_v);
+                }
+            }
         }
         if (hasParameter(CFG::MaxShapes, maxShape, r.get())) {
             if (maxShape > 1)

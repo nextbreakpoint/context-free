@@ -82,6 +82,7 @@ namespace AST {
                 // Must make sure next char is not +/-, whitespace or 0 before
                 // we can use strtol()
                 char* tail = nullptr;
+                errno = 0;
                 long sz = std::strtol(typeName.c_str() + 6, &tail, 10);
                 if ((tail && *tail != '\0') || errno == ERANGE) {
                     CfdgError::Error(mLocation, "Illegal vector type specification");
@@ -118,9 +119,8 @@ namespace AST {
     : mLocation(where)
     { init(nameIndex, def); }
     
-    ASTparameter::ASTparameter(int nameIndex, bool natural, bool local, const yy::location& where)
-    : mType(NumericType), isLoopIndex(true), isNatural(natural),
-      mName(nameIndex), mLocation(where)
+    ASTparameter::ASTparameter(int nameIndex, const yy::location& where)
+    : mType(NumericType), isLoopIndex(true), mName(nameIndex), mLocation(where)
     { }     // ctor for loop variables
     
     ASTparameter::ASTparameter(const ASTparameter& from)
@@ -150,7 +150,7 @@ namespace AST {
     
     
     void
-    ASTparameter::checkParam(const yy::location& typeLoc, const yy::location& nameLoc)
+    ASTparameter::checkParam(const yy::location&, const yy::location& nameLoc)
     {
         if (mName == -1)
             CfdgError::Error(nameLoc, "Reserved keyword used for parameter name");
@@ -170,7 +170,7 @@ namespace AST {
     {
         if (mType != e.mType) return true;
         if (mType == AST::NumericType &&
-            mTuplesize != e.evaluate(nullptr, 0)) return true;
+            mTuplesize != e.evaluate()) return true;
         return false;
     }
     
@@ -220,7 +220,7 @@ namespace AST {
                 return -1;
             }
             if (param_it->mType == AST::NumericType &&
-                param_it->mTuplesize != arg->evaluate(nullptr, 0))
+                param_it->mTuplesize != arg->evaluate())
             {
                 if (param_it->mTuplesize == 1)
                     CfdgError::Error(arg->where, "This argument should be scalar");
@@ -254,16 +254,17 @@ namespace AST {
                 std::vector<double> data(mTuplesize);
                 bool natural = isNatural;
                 int valCount = mDefinition->mExpression->evaluate(data.data(), mTuplesize);
-                if (valCount != mTuplesize)
+                if (valCount != mTuplesize || valCount == 0)
                     CfdgError::Error(where, "Unexpected compile error.");                   // this also shouldn't happen
+                if (valCount < 1 || data.empty())
+                    return new ASTreal(0.0, where);     // shouldn't happen, but we don't want to crash if it does
                 
                 // Create a new cons-list based on the evaluated variable's expression
-                ASTreal* top = new ASTreal(data[0], mDefinition->mExpression->where);
-                top->text = entropy;                // use variable name for entropy
-                ASTexpression* list = top;
-                for (int i = 1; i < valCount; ++i) {
-                    ASTreal* next = new ASTreal(data[i], where);
-                    list = list->append(next);
+                ASTexpression* list = nullptr;
+                for (auto value: data) {
+                    ASTreal* r = new ASTreal(value, where);
+                    if (!list) r->text = entropy;
+                    list = list ? list->append(r) : r;
                 }
                 list->isNatural = natural;
                 list->mLocality = mLocality;
@@ -1011,25 +1012,27 @@ namespace AST {
             const ASTexpression* cit = e->getChild(i);
             switch (cit->mType) {
                 case FlagType:
-                    processSymmSpec(syms, tile, tiled, symmSpec, where);
+                    // Snarf and process the numeric arguments for the symmetry spec
                     where = cit->where;
-                case NumericType: {
-                    if (symmSpec.empty() && cit->mType != FlagType)
-                        CfdgError::Error(cit->where, "Symmetry flag expected here");
-                    int sz = cit->evaluate(nullptr, 0);
-                    if (sz < 1) {
-                        CfdgError::Error(cit->where, "Could not evaluate this");
-                    } else {
-                        size_t oldsize = symmSpec.size();
-                        symmSpec.resize(oldsize + sz);
-                        if (cit->evaluate(symmSpec.data() + oldsize, sz, r) != sz)
+                    do {
+                        int sz = cit->evaluate();
+                        if (sz < 1) {
                             CfdgError::Error(cit->where, "Could not evaluate this");
-                    }
-                    where = where + cit->where;
-                    break;
-                }
-                case ModType:
+                        } else {
+                            size_t oldsize = symmSpec.size();
+                            symmSpec.resize(oldsize + sz);
+                            if (cit->evaluate(symmSpec.data() + oldsize, sz, r) != sz)
+                                CfdgError::Error(cit->where, "Could not evaluate this");
+                        }
+                        where = where + cit->where;
+                    } while (++i < e->size() && (cit = e->getChild(i))->mType == NumericType);
                     processSymmSpec(syms, tile, tiled, symmSpec, where);
+                    --i;    // back-up loop variable to end of symmetry spec
+                    break;
+                case NumericType:
+                    CfdgError::Error(cit->where, "Symmetry flag expected here");
+                    break;
+                case ModType:
                     if (const ASTmodification* m = dynamic_cast<const ASTmodification*>(&*cit)) {
                         if ((m->modClass &
                              (ASTmodification::GeomClass | ASTmodification::PathOpClass)) ==
@@ -1050,7 +1053,6 @@ namespace AST {
                     break;
             }
         }
-        processSymmSpec(syms, tile, tiled, symmSpec, where);
         return ret;
     }
 }

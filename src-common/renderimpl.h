@@ -61,12 +61,10 @@ namespace AST {
 
 class RendererImpl : public RendererAST {
     public:
-        RendererImpl(CFDGImpl* cfdg,    // takes ownership w/o move semantics
-                        int width, int height, double minSize,
-                        int variation, double border);
+        RendererImpl(const cfdg_ptr& cfdg,
+                     int width, int height, double minSize,
+                     int variation, double border);
         ~RendererImpl();
-    
-        virtual void storeParams(const StackRule* p) override;
     
         void setMaxShapes(int n) override;
         void resetBounds() override;
@@ -75,10 +73,10 @@ class RendererImpl : public RendererAST {
         
         double run(Canvas* canvas, bool partialDraw) override;
         void draw(Canvas* canvas) override;
-        void animate(Canvas* canvas, int frames, bool zoom) override;
+        void animate(Canvas* canvas, int frames, int frame, bool zoom) override;
         void processPathCommand(const Shape& s, const AST::CommandInfo* attr) override;
-        void processShape(const Shape& s) override;
-        void processPrimShape(const Shape& s, const AST::ASTrule* attr = nullptr) override;
+        void processShape(Shape& s) override;
+        void processPrimShape(Shape& s, const AST::ASTrule* attr = nullptr) override;
         void processSubpath(const Shape& s, bool tr, int) override;
         
     private:
@@ -162,7 +160,7 @@ class RendererImpl : public RendererAST {
         AbstractSystem::Stats m_stats;
         int m_unfinishedInFilesCount;
     
-        std::remove_const<decltype(primShape::shapeMap)>::type shapeCopies;
+        primShape::primShapes_t shapeCopies;
         std::array<AST::CommandInfo, primShape::numTypes> shapeMap;
     
         static unsigned int MoveFinishedAt;     // when this many, move to file

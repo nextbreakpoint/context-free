@@ -103,6 +103,7 @@ namespace AST {
             { "frame",      ASTfunction::Frame },
             { "rand_static",        ASTfunction::Rand_Static },
             { "rand",               ASTfunction::Rand },
+            { "rand.",              ASTfunction::RandOp },
             { "rand+/-",            ASTfunction::Rand2 },
             { "rand::exponential",  ASTfunction::RandExponential },
             { "rand::gamma",        ASTfunction::RandGamma },
@@ -148,7 +149,7 @@ namespace AST {
     {
     }
     
-    ASTruleSpecifier::ASTruleSpecifier(ASTruleSpecifier&& r)
+    ASTruleSpecifier::ASTruleSpecifier(ASTruleSpecifier&& r) noexcept
     : ASTexpression(r.where, r.isConstant, false, r.mType), shapeType(r.shapeType),
       argSize(r.argSize), entropyVal(r.entropyVal), argSource(r.argSource),
       arguments(std::move(r.arguments)), simpleRule(std::move(r.simpleRule)),
@@ -189,40 +190,37 @@ namespace AST {
     ASTruleSpecifier::evalArgs(RendererAST* rti, const StackRule* parent) const
     {
         switch (argSource) {
-        case NoArgs:
-        case SimpleArgs:
-            return simpleRule;
-        case StackArgs: {
-            assert(rti);
-            const StackType* stackItem = rti->stackItem(mStackIndex);
-            return stackItem->rule;
-        }
-        case ParentArgs:
-            assert(parent);
-            assert(rti);
-            if (shapeType != parent->mRuleName) {
-                // Child shape is different from parent, even though parameters are reused,
-                // and we can't finesse it in ASTreplacement::traverse(). Just
-                // copy the parameters with the correct shape type.
-                StackRule* ret = StackRule::alloc(parent);
-                ret->mRuleName = static_cast<int16_t>(shapeType);
+            case NoArgs:
+            case SimpleArgs:
+                return simpleRule;
+            case StackArgs: {
+                assert(rti);
+                const StackType* stackItem = rti->stackItem(mStackIndex);
+                return stackItem->rule;
+            }
+            case ParentArgs:
+                assert(parent);
+                assert(rti);
+                if (shapeType != parent->mRuleName) {
+                    // Child shape is different from parent, even though parameters are reused,
+                    // and we can't finesse it in ASTreplacement::traverse(). Just
+                    // copy the parameters with the correct shape type.
+                    return param_ptr(StackRule::alloc(parent, shapeType));
+                }
+            case SimpleParentArgs:
+                assert(parent);
+                assert(rti);
+                return param_ptr(parent);
+            case DynamicArgs: {
+                StackRule* ret = StackRule::alloc(shapeType, argSize, typeSignature);
+                ret->evalArgs(rti, arguments.get(), parent);
                 return param_ptr(ret);
             }
-        case SimpleParentArgs:
-            assert(parent);
-            assert(rti);
-            parent->retain();
-            return param_ptr(parent);
-        case DynamicArgs: {
-            StackRule* ret = StackRule::alloc(shapeType, argSize, typeSignature);
-            ret->evalArgs(rti, arguments.get(), parent);
-            return param_ptr(ret);
-        }
-        case ShapeArgs:
-            return arguments->evalArgs(rti, parent);
-        default:
-            assert(false);
-            return nullptr;
+            case ShapeArgs:
+                return arguments->evalArgs(rti, parent);
+            default:
+                assert(false);
+                return nullptr;
         }
     }
     
@@ -252,10 +250,10 @@ namespace AST {
     : mFunc(func), mRTI(rti),
       mOldTop(rti->mLogicalStackTop), mOldSize(rti->mStackSize)
     {
-        if (mFunc->definition->mStackCount) {
-            if (mOldSize + mFunc->definition->mStackCount > mRTI->mCFstack.size())
+        if (mFunc->definition->mParamSize) {
+            if (mOldSize + mFunc->definition->mParamSize > mRTI->mCFstack.size())
                 CfdgError::Error(mFunc->where, "Maximum stack size exceeded");
-            mRTI->mStackSize += mFunc->definition->mStackCount;
+            mRTI->mStackSize += mFunc->definition->mParamSize;
             mRTI->mCFstack[mOldSize].evalArgs(mRTI, mFunc->arguments.get(), &(mFunc->definition->mParameters), mFunc->isLet);
             mRTI->mLogicalStackTop = mRTI->mCFstack.data() + mRTI->mStackSize;
         }
@@ -263,8 +261,8 @@ namespace AST {
     
     ASTuserFunction::StackSetup::~StackSetup()
     {
-        if (mFunc->definition->mStackCount) {
-            mRTI->mCFstack[mOldSize].release(&(mFunc->definition->mParameters));
+        if (mFunc->definition->mParamSize) {
+            mRTI->mCFstack[mOldSize].destroy(&(mFunc->definition->mParameters));
             mRTI->mStackSize = mOldSize;
             mRTI->mLogicalStackTop = mOldTop;
         }
@@ -288,7 +286,7 @@ namespace AST {
         return definition->mExpression->evalArgs(rti, parent);
     }   // saveIt dtor cleans up the stack
     
-    ASTcons::ASTcons(std::initializer_list<ASTexpression*> kids)
+    ASTcons::ASTcons(exp_list kids)
     : ASTexpression((*(kids.begin()))->where, true, true, NoType)
     // Must have at least one kid or else undefined behavior
     {
@@ -723,12 +721,20 @@ namespace AST {
                         res[i] = ((l[i] - r[i]) > 0.0) ? (l[i] - r[i]) : 0.0;
                     break;
                 case '*':
-                    for (int i = 0 ; i < tupleSize; ++i)
-                        res[i] = l[i] * r[i];
+                    if (leftnum == rightnum)
+                        for (int i = 0 ; i < tupleSize; ++i)
+                            res[i] = l[i] * r[i];
+                    else
+                        for (int i = 0 ; i < tupleSize; ++i)
+                            res[i] = leftnum == 1 ? l[0] * r[i] : l[i] * r[0];
                     break;
                 case '/':
-                    for (int i = 0 ; i < tupleSize; ++i)
-                        res[i] = l[i] / r[i];
+                    if (leftnum == rightnum)
+                        for (int i = 0 ; i < tupleSize; ++i)
+                            res[i] = l[i] / r[i];
+                    else
+                        for (int i = 0 ; i < tupleSize; ++i)
+                            res[i] = leftnum == 1 ? l[0] / r[i] : l[i] / r[0];
                     break;
                 case '<':
                     *res = (l[0] < r[0]) ? 1.0 : 0.0;
@@ -851,11 +857,11 @@ namespace AST {
                 return 3;
             }
             case Vec: {
-                double l[AST::MaxVectorSize];
-                int lc = arguments->getChild(0)->evaluate(l, AST::MaxVectorSize, rti);
-                if (lc >= 1)
+                double l[AST::MaxVectorSize + 1];
+                int lc = arguments->evaluate(l, AST::MaxVectorSize + 1, rti);
+                if (lc > 1)
                     for (int i = 0; i < destLength; ++i)
-                        res[i] = l[i % lc];
+                        res[i] = l[i % (lc - 1) + 1];
                 return destLength;
             }
             case Hsb2Rgb: {
@@ -1021,7 +1027,8 @@ namespace AST {
             case Rand_Static: 
                 *res = random * fabs(a[1] - a[0]) + fmin(a[0], a[1]);
                 break;
-            case Rand: 
+            case Rand:
+            case RandOp:
                 if (rti == nullptr) throw DeferUntilRuntime();
                 rti->mRandUsed = true;
                 *res = rti->mCurrentSeed.getDouble() * fabs(a[1] - a[0]) + fmin(a[0], a[1]);
@@ -1287,8 +1294,6 @@ namespace AST {
     void
     ASTmodTerm::evaluate(Modification& m, bool shapeDest, RendererAST* rti) const
     {
-        double modArgs[6] = {0.0};
-        int argcount = 0;
         static_assert(offsetof(HSBColor, s) - offsetof(HSBColor, h) == sizeof(double) * (ASTmodTerm::sat - ASTmodTerm::hue), "Unexpected HSBcolor layout");
         static_assert(offsetof(HSBColor, b) - offsetof(HSBColor, h) == sizeof(double) * (ASTmodTerm::bright - ASTmodTerm::hue), "Unexpected HSBcolor layout");
         static_assert(offsetof(HSBColor, a) - offsetof(HSBColor, h) == sizeof(double) * (ASTmodTerm::alpha - ASTmodTerm::hue), "Unexpected HSBcolor layout");
@@ -1299,10 +1304,38 @@ namespace AST {
         static_assert(offsetof(HSBColor, b) - offsetof(HSBColor, h) == sizeof(double) * (ASTmodTerm::targBright - ASTmodTerm::targHue), "Unexpected HSBcolor layout");
         static_assert(offsetof(HSBColor, a) - offsetof(HSBColor, h) == sizeof(double) * (ASTmodTerm::targAlpha - ASTmodTerm::targHue), "Unexpected HSBcolor layout");
         
+        if (modType == modification) {
+            if (!args || args->mType != ModType) {
+                CfdgError::Error(where, "transform adjustments require an adjustment argument");
+                return;
+            }
+            if (rti == nullptr) {
+                const ASTmodification* mod = dynamic_cast<const ASTmodification*>(args.get());
+                // Color adjustments are not associative like geometry adjustments,
+                // so they must be done in order at run-time
+                if (!mod || (mod->modClass & (ASTmodification::HueClass |
+                                              ASTmodification::HueTargetClass |
+                                              ASTmodification::BrightClass |
+                                              ASTmodification::BrightTargetClass |
+                                              ASTmodification::SatClass |
+                                              ASTmodification::SatTargetClass |
+                                              ASTmodification::AlphaClass |
+                                              ASTmodification::AlphaTargetClass)))
+                {
+                    throw DeferUntilRuntime();
+                }
+            }
+            args->evaluate(m, shapeDest, rti);
+            return;
+        }
+        
+        double modArgs[6] = {0.0};
+        int argcount = 0;
+
         if (args) {
-            if (modType != modification && args->mType == NumericType) {
+            if (args->mType == NumericType) {
                 argcount = args->evaluate(modArgs, 6, rti);
-            } else if (modType == modification && args->mType != ModType){
+            } else {
                 CfdgError::Error(where, "Adjustments require numeric arguments");
                 return;
             }
@@ -1532,22 +1565,7 @@ namespace AST {
                 CfdgError::Error(where, "Unrecognized adjustment type");
                 break;
             case ASTmodTerm::modification: {
-                if (rti == nullptr) {
-                    const ASTmodification* mod = dynamic_cast<const ASTmodification*>(args.get());
-                    if (!mod || (mod->modClass & (ASTmodification::HueClass |
-                                                  ASTmodification::HueTargetClass |
-                                                  ASTmodification::BrightClass |
-                                                  ASTmodification::BrightTargetClass |
-                                                  ASTmodification::SatClass |
-                                                  ASTmodification::SatTargetClass |
-                                                  ASTmodification::AlphaClass |
-                                                  ASTmodification::AlphaTargetClass)))
-                    {
-                        throw DeferUntilRuntime();
-                    }
-                }
-                args->evaluate(m, shapeDest, rti);
-                break;
+                break;      // supress warning, never happens
             }
         }
     }
@@ -1603,6 +1621,7 @@ namespace AST {
             { ASTfunction::Frame,       "\x90\x70\x6A\xBB\xBA\xB0" },
             { ASTfunction::Rand_Static, "\xC8\xF7\xE5\x3E\x05\xA3" },
             { ASTfunction::Rand,        "\xDA\x18\x5B\xE2\xDB\x79" },
+            { ASTfunction::RandOp,      "\xDA\x18\x5B\xE2\xDB\x79" },
             { ASTfunction::Rand2,       "\xDC\x8D\x09\x15\x8A\xC4" },
             { ASTfunction::RandExponential, "\x32\xDF\x4A\xFD\x00\x1F" },
             { ASTfunction::RandGamma,       "\xC9\xD5\x57\x4F\xE6\x77" },
@@ -1769,22 +1788,17 @@ namespace AST {
     static ASTexpression*
     MakeResult(const double* result, int length, const ASTexpression* from)
     {
-        ASTreal* r = new ASTreal(result[0], from->where);
-        r->mType = from->mType;
-        r->isNatural = from->isNatural;
-        
-        if (length > 1) {
-            ASTcons* l = new ASTcons{r};
-            for (int i = 1; i < length; ++i) {
-                r = new ASTreal(result[i], from->where);
-                r->mType = from->mType;
-                r->isNatural = from->isNatural;
-                l->append(r);
-            }
-            return l;
+        ASTexpression* ret = nullptr;
+        // Can't use range for with decayed array pointers :(
+        for (auto val = result; val < result + length; ++val) {
+            ASTreal* r = new ASTreal(*val, from->where);
+            r->mType = from->mType;
+            r->isNatural = from->isNatural;
+            
+            ret = ret ? ret->append(r) : r;
         }
         
-        return r;
+        return ret;
     }
     
     ASTexpression*
@@ -1796,15 +1810,13 @@ namespace AST {
             double result[AST::MaxVectorSize];
             int len = evaluate(result, AST::MaxVectorSize);
             if (len < 0) {
-                return this;
+                return nullptr;
             }
             
-            ASTexpression* r = MakeResult(result, len, this);
-            delete this;
-            return r;
+            return MakeResult(result, len, this);
         }
         
-        return this;
+        return nullptr;
     }
     
     ASTexpression*
@@ -1814,13 +1826,11 @@ namespace AST {
             for (auto& arg: arguments)
                 Simplify(arg);
             Simplify(selector);
-            return this;
+            return nullptr;
         }
         
-        ASTexpression* chosenOne = arguments[indexCache].release();
-        
-        delete this;
-        return chosenOne->simplify();
+        Simplify(arguments[indexCache]);
+        return arguments[indexCache].release();
     }
     
     ASTexpression*
@@ -1828,7 +1838,7 @@ namespace AST {
     {
         if (arguments) {
             if (ASTcons* carg = dynamic_cast<ASTcons*>(arguments.get())) {
-                for (auto&& child: carg->children)
+                for (auto& child: carg->children)
                     Simplify(child);
             } else {
                 Simplify(arguments);
@@ -1839,7 +1849,7 @@ namespace AST {
             const ASTparameter* bound = Builder::CurrentBuilder->findExpression(shapeType, isGlobal);
             assert(bound);
             if (bound->mType != RuleType)
-                return this;
+                return nullptr;
             if (bound->mStackIndex == -1) {
                 assert(bound->mDefinition);
                 if (ASTruleSpecifier* r = dynamic_cast<ASTruleSpecifier*>(bound->mDefinition->mExpression.get())) {
@@ -1861,7 +1871,7 @@ namespace AST {
                 }
             }
         }
-        return this;
+        return nullptr;
     }
     
     ASTexpression*
@@ -1872,20 +1882,19 @@ namespace AST {
             ASTexpression* m = mModification->simplify();
             assert(m == mModification.get());
         }
-        return this;
+        return nullptr;
     }
     
     ASTexpression*
     ASTcons::simplify()
     {
-        if (children.size() == 1) {
-            ASTexpression* ret = children[0].release()->simplify();
-            delete this;
-            return ret;
-        }
-        for (auto&& child: children)
+        for (auto& child: children)
             Simplify(child);
-        return this;
+        
+        if (children.size() == 1)
+            return children[0].release();
+        
+        return nullptr;
     }
     
     ASTexpression*
@@ -1896,13 +1905,13 @@ namespace AST {
                 // Can't use ASTcons::simplify() because it will collapse the
                 // ASTcons if it only has one child and that will break the
                 // function arguments.
-                for (auto&& child: carg->children)
+                for (auto& child: carg->children)
                     Simplify(child);
             } else {
                 Simplify(arguments);
             }
         }
-        return this;
+        return nullptr;
     }
     
     ASTexpression*
@@ -1916,14 +1925,10 @@ namespace AST {
             ASTparameter p(-1, definition, where);
             p.mDefinition = definition;     // ctor won't do this
             ASTexpression* ret = p.constCopy(where, ent);
-            if (ret) {
-                delete this;
+            if (ret)
                 return ret;
-            }
         } else if (!arguments) {
-            ASTexpression* ret = definition->mExpression.release();
-            delete this;
-            return ret;
+            return definition->mExpression.release();
         }
         return ASTuserFunction::simplify();
     }
@@ -1937,38 +1942,108 @@ namespace AST {
         if (isConstant && (mType == NumericType || mType == FlagType)) {
             double result[AST::MaxVectorSize];
             if (evaluate(result, tupleSize) != tupleSize) {
-                return this;
+                return nullptr;
             }
             
-            ASTexpression* r = MakeResult(result, tupleSize, this);
-            delete this;
-            return r;
+            return MakeResult(result, tupleSize, this);
         }
         
-        return this;
+        return nullptr;
     }
     
     ASTexpression*
     ASTparen::simplify()
     {
-        ASTexpression* e2 = e.release()->simplify();
-        
-        delete this;
-        return e2;
+        Simplify(e);
+        return e.release();
     }
     
     ASTexpression*
     ASTmodTerm::simplify()
     {
         Simplify(args);
-        return this;
+        return nullptr;
     }
     
     ASTexpression*
     ASTmodification::simplify()
     {
-        evalConst();
-        return this;
+        static const std::map<ASTmodTerm::modTypeEnum, int> ClassMap = {
+            { ASTmodTerm::unknownType,  ASTmodification::NotAClass },
+            { ASTmodTerm::x,            ASTmodification::GeomClass | ASTmodification::PathOpClass },
+            { ASTmodTerm::y,            ASTmodification::GeomClass | ASTmodification::PathOpClass },
+            { ASTmodTerm::z,            ASTmodification::ZClass },
+            { ASTmodTerm::xyz,          ASTmodification::GeomClass | ASTmodification::ZClass },
+            { ASTmodTerm::transform,    ASTmodification::GeomClass },
+            { ASTmodTerm::size,         ASTmodification::GeomClass },
+            { ASTmodTerm::sizexyz,      ASTmodification::GeomClass | ASTmodification::ZClass },
+            { ASTmodTerm::rot,          ASTmodification::GeomClass | ASTmodification::PathOpClass },
+            { ASTmodTerm::skew,         ASTmodification::GeomClass },
+            { ASTmodTerm::flip,         ASTmodification::GeomClass },
+            { ASTmodTerm::zsize,        ASTmodification::ZClass },
+            { ASTmodTerm::hue,          ASTmodification::HueClass },
+            { ASTmodTerm::sat,          ASTmodification::SatClass },
+            { ASTmodTerm::bright,       ASTmodification::BrightClass },
+            { ASTmodTerm::alpha,        ASTmodification::AlphaClass },
+            { ASTmodTerm::hueTarg,      ASTmodification::HueClass },
+            { ASTmodTerm::satTarg,      ASTmodification::SatClass },
+            { ASTmodTerm::brightTarg,   ASTmodification::BrightClass },
+            { ASTmodTerm::alphaTarg,    ASTmodification::AlphaClass },
+            { ASTmodTerm::targHue,      ASTmodification::HueTargetClass },
+            { ASTmodTerm::targSat,      ASTmodification::SatTargetClass },
+            { ASTmodTerm::targBright,   ASTmodification::BrightTargetClass },
+            { ASTmodTerm::targAlpha,    ASTmodification::AlphaTargetClass },
+            { ASTmodTerm::time,         ASTmodification::TimeClass },
+            { ASTmodTerm::timescale,    ASTmodification::TimeClass },
+            { ASTmodTerm::stroke,       ASTmodification::StrokeClass },
+            { ASTmodTerm::param,        ASTmodification::ParamClass },
+            { ASTmodTerm::x1,           ASTmodification::PathOpClass },
+            { ASTmodTerm::y1,           ASTmodification::PathOpClass },
+            { ASTmodTerm::x2,           ASTmodification::PathOpClass },
+            { ASTmodTerm::y2,           ASTmodification::PathOpClass },
+            { ASTmodTerm::xrad,         ASTmodification::PathOpClass },
+            { ASTmodTerm::yrad,         ASTmodification::PathOpClass },
+            { ASTmodTerm::modification, -1 }
+        };
+        
+        int nonConstant = 0;
+        
+        ASTtermArray temp;
+        temp.swap(modExp);
+        
+        for (term_ptr& mod: temp) {
+            if (!mod) {
+                CfdgError::Error(where, "Unknown term in shape adjustment");
+                continue;
+            }
+            
+            // Put in code for separating color changes and target color changes
+            
+            int mc = ClassMap.at(mod->modType);
+            modClass |= mc;
+            if (!mod->isConstant)
+                nonConstant |= mc;
+            bool keepThisOne = (mc & nonConstant) != 0;
+            
+            if (Builder::CurrentBuilder->mInPathContainer && (mc & ZClass))
+                CfdgError::Warning(mod->where, "Z changes are not supported within paths");
+            if (Builder::CurrentBuilder->mInPathContainer && (mc & TimeClass))
+                CfdgError::Warning(mod->where, "Time changes are not supported within paths");
+            
+            try {
+                if (!keepThisOne)
+                    mod->evaluate(modData, false, nullptr);
+            } catch (DeferUntilRuntime&) {
+                keepThisOne = true;
+            }
+            
+            if (keepThisOne) {
+                assert(mod->modType != ASTmodTerm::param);
+                Simplify(mod->args);
+                modExp.push_back(std::move(mod));
+            }
+        }
+        return nullptr;
     }
     
     ASTexpression*
@@ -1976,24 +2051,23 @@ namespace AST {
     {
         if (!mData || !isConstant || mLength > 1) {
             Simplify(mArgs);
-            return this;
+            return nullptr;
         }
         
         double i;
         if (mArgs->evaluate(&i, 1) != 1) {
             CfdgError::Error(mArgs->where, "Cannot evaluate array index");
-            return this;
+            return nullptr;
         }
         int index = static_cast<int>(i);
         if (index >= mCount || index < 0) {
             CfdgError::Error(where, "Array index exceeds bounds");
-            return this;
+            return nullptr;
         }
         
         ASTreal* top = new ASTreal(mData[index], where);
         top->text = entString;                // use variable name for entropy
         top->isNatural = isNatural;
-        delete this;
         return top;
     }
 
@@ -2017,7 +2091,7 @@ namespace AST {
                     if (mLocality == PureNonlocal)
                         mLocality = ImpureNonlocal;
                     if (arguments->mType == NumericType)
-                        argcount = arguments->evaluate(nullptr, 0);
+                        argcount = arguments->evaluate();
                     else
                         CfdgError::Error(argsLoc, "function arguments must be numeric");
                 }
@@ -2029,7 +2103,7 @@ namespace AST {
                         break;
                     case Infinity:
                         if (argcount == 0) {
-                            arguments.reset(new ASTreal(1.0, argsLoc));
+                            arguments = std::make_unique<ASTreal>(1.0, argsLoc);
                             argcount = 1;
                         }   // fall through
                     case Cos:
@@ -2076,8 +2150,8 @@ namespace AST {
                         if (argnum != 2) {
                             CfdgError::Error(argsLoc, "Dot/cross product takes two vectors");
                         } else {
-                            int l = arguments->getChild(0)->evaluate(nullptr, 0);
-                            int r = arguments->getChild(1)->evaluate(nullptr, 0);
+                            int l = arguments->getChild(0)->evaluate();
+                            int r = arguments->getChild(1)->evaluate();
                             if (functype == Dot && (l != r || l < 2))
                                 CfdgError::Error(argsLoc, "Dot product takes two vectors of the same length");
                             if (functype == Cross && (l != 3 || r != 3))
@@ -2090,11 +2164,11 @@ namespace AST {
                             CfdgError::Error(argsLoc, "RGB/HSB conversion function takes 3 arguments");
                         break;
                     case Vec:
-                        if (argnum != 2) {
-                            CfdgError::Error(argsLoc, "vec() function takes two arguments");
-                        } else if (!arguments->getChild(1)->isConstant ||
-                                   !arguments->getChild(1)->isNatural ||
-                                    arguments->getChild(1)->evaluate(&random, 1) != 1)
+                        if (argnum < 2) {
+                            CfdgError::Error(argsLoc, "vec() function at least two arguments");
+                        } else if (!arguments->getChild(0)->isConstant ||
+                                   !arguments->getChild(0)->isNatural ||
+                                    arguments->getChild(0)->evaluate(&random, 1) != 1)
                         {
                             CfdgError::Error(arguments->getChild(1)->where, "vec() function length argument must be a scalar constant");
                         } else if (static_cast<int>(floor(random)) < 2 ||
@@ -2108,20 +2182,26 @@ namespace AST {
                         if (arguments)
                             CfdgError::Error(argsLoc, "ftime()/frame() functions takes no arguments");
                         isConstant = false;
-                        arguments.reset(new ASTreal(1.0, argsLoc));
+                        arguments = std::make_unique<ASTreal>(1.0, argsLoc);
                         break;
                     case Rand:
+                    case RandOp:
                     case Rand2:
                     case RandInt:
                         isConstant = false;
                     case Rand_Static:
                         switch (argcount) {
                             case 0:
-                                arguments.reset(new ASTcons{ new ASTreal(0.0, argsLoc),
-                                                             new ASTreal(functype == RandInt ? 2.0 : 1.0, argsLoc) });
+                                arguments = std::make_unique<ASTcons>(exp_list({
+                                    new ASTreal(0.0, argsLoc),
+                                    new ASTreal(functype == RandInt ? 2.0 : 1.0, argsLoc)
+                                }));
                                 break;
                             case 1:
-                                arguments.reset(new ASTcons{ new ASTreal(0.0, argsLoc), arguments.release() });
+                                arguments = std::make_unique<ASTcons>(exp_list({
+                                    new ASTreal(0.0, argsLoc),
+                                    arguments.release()
+                                }));
                                 break;
                             case 2:
                                 break;
@@ -2220,7 +2300,7 @@ namespace AST {
                 selector = std::move(arguments[0]);
                 arguments.erase(arguments.begin());
                 
-                if (selector->mType != NumericType || selector->evaluate(nullptr, 0) != 1) {
+                if (selector->mType != NumericType || selector->evaluate() != 1) {
                     CfdgError::Error(selector->where, "if()/select() selector must be a numeric scalar");
                     return nullptr;
                 }
@@ -2231,12 +2311,12 @@ namespace AST {
                 
                 mType = arguments[0]->mType;
                 isNatural = arguments[0]->isNatural;
-                tupleSize = (mType == NumericType) ? arguments[0]->evaluate(nullptr, 0) : 1;
+                tupleSize = (mType == NumericType) ? arguments[0]->evaluate() : 1;
                 for (auto&& argument: arguments) {
                     if (mType != argument->mType) {
                         CfdgError::Error(argument->where, "select()/if() choices must be of same type");
                     } else if (mType == NumericType && tupleSize != -1 &&
-                               argument->evaluate(nullptr, 0) != tupleSize)
+                               argument->evaluate() != tupleSize)
                     {
                         CfdgError::Error(argument->where, "select()/if() choices must be of same length");
                         tupleSize = -1;
@@ -2332,7 +2412,7 @@ namespace AST {
                         if (func) {
                             if (func->mType == RuleType) {
                                 argSource = ShapeArgs;
-                                arguments.reset(new ASTuserFunction(shapeType, arguments.release(), func, where));
+                                arguments = std::make_unique<ASTuserFunction>(shapeType, arguments.release(), func, where);
                                 Compile(arguments, ph);
                                 isConstant = false;
                                 mLocality = arguments->mLocality;
@@ -2398,7 +2478,6 @@ namespace AST {
                             if (arguments->isConstant) {
                                 simpleRule = evalArgs();
                                 argSource = SimpleArgs;
-                                Builder::CurrentBuilder->storeParams(simpleRule.get());
                                 isConstant = true;
                                 mLocality = PureLocal;
                             } else {
@@ -2411,7 +2490,6 @@ namespace AST {
                             simpleRule = StackRule::alloc(shapeType, 0, typeSignature);
                             isConstant = true;
                             mLocality = PureLocal;
-                            Builder::CurrentBuilder->storeParams(simpleRule.get());
                         }
                         break;
                     }
@@ -2566,7 +2644,7 @@ namespace AST {
                 for (auto& rep: mDefinitions->mBody) {
                     if (ASTdefine* def = dynamic_cast<ASTdefine*>(rep.get()))
                         if (def->mDefineType == ASTdefine::StackDefine) {
-                            definition->mStackCount += def->mTuplesize;
+                            definition->mParamSize += def->mTuplesize;
                             args = ASTexpression::Append(args, def->mExpression.release());
                         }
                 }
@@ -2607,8 +2685,8 @@ namespace AST {
                     mLocality = ImpureNonlocal;
                 mType = right ? static_cast<expType>(left->mType | right->mType) : left->mType;
                 if (mType == NumericType) {
-                    int ls = left ? left->evaluate(nullptr, 0) : 0;
-                    int rs = right ? right->evaluate(nullptr, 0) : 0;
+                    int ls = left ? left->evaluate() : 0;
+                    int rs = right ? right->evaluate() : 0;
                     switch (op) {
                         case 'N':
                         case 'P':
@@ -2620,11 +2698,17 @@ namespace AST {
                             if (rs != 0 || ls != 1)
                                 CfdgError::Error(where, "Unitary operators must have only one scalar operand");
                             break;
+                        case '/':
+                        case '*':
+                            if (ls < 1 || rs < 1)
+                                CfdgError::Error(where, "Binary operators must have two operands");
+                            else if (ls != rs && std::min(ls, rs) > 1)
+                                CfdgError::Error(where, "At least one operand must be scalar (or both same size)");
+                            tupleSize = std::max(ls, rs);
+                            break;
                         case '+':
                         case '-':
                         case '_':
-                        case '/':
-                        case '*':
                             tupleSize = ls;
                         case '=':
                         case 'n':
@@ -2695,7 +2779,7 @@ namespace AST {
                 mLocality = args->mLocality;
                 switch (args->mType) {
                     case NumericType: {
-                        argCount = args->evaluate(nullptr, 0);
+                        argCount = args->evaluate();
                         int minCount = 1;
                         int maxCount = 1;
                         
@@ -2780,18 +2864,19 @@ namespace AST {
     ASTmodification::compile(AST::CompilePhase ph)
     {
         for (auto& term: modExp)
-            term->compile(ph);          // ASTterm always return this
+            term->compile(ph);          // ASTterm::compile() always return nullptr
         
         switch (ph) {
             case CompilePhase::TypeCheck: {
                 ASTtermArray temp;
                 temp.swap(modExp);
                 for (auto term = temp.begin(); term != temp.end(); ++term) {
+                    if (!(*term)) continue;     // skip deleted terms
                     if (!(*term)->args || (*term)->args->mType != NumericType) {
                         modExp.emplace_back(std::move(*term));
                         continue;
                     }
-                    int argcount = (*term)->args->evaluate(nullptr, 0);
+                    int argcount = (*term)->args->evaluate();
                     switch ((*term)->modType) {
                             // Try to merge consecutive x and y adjustments
                         case ASTmodTerm::x:
@@ -2804,14 +2889,17 @@ namespace AST {
                                 argcount == 1)
                             {
                                 (*term)->args.reset((*term)->args.release()->append((*next)->args.release()));
+                                (*term)->isConstant = (*term)->args->isConstant;
+                                (*term)->isNatural = (*term)->args->isNatural;
+                                (*term)->mLocality = (*term)->args->mLocality;
+                                (*term)->where = (*term)->where + (*term)->args->where;
                                 (*term)->argCount = 2;
-                                modExp.emplace_back(std::move(*term));
-                                term = next;
-                                continue;
+                                (*next).reset();    // delete the empty y term
+                                break;
                             }               // next stays in temp
                             /* if ((*term)->modType == ASTmodTerm::y &&
                                 (*next)->modType == ASTmodTerm::x &&
-                                (*next)->args->evaluate(nullptr, 0) == 1)
+                                (*next)->args->evaluate() == 1)
                             {
                                 (*next)->args.reset((*next)->args.release()->append((*term)->args.release()));
                                 (*term)->argCount = 2;
@@ -2828,49 +2916,56 @@ namespace AST {
                         case ASTmodTerm::sizexyz: {
                             double d[3];
                             if ((*term)->args->isConstant && (*term)->args->evaluate(d, 3) == 3) {
-                                (*term)->args.reset(new ASTcons{ new ASTreal(d[0], (*term)->where), new ASTreal(d[1], (*term)->where) });
+                                (*term)->args = std::make_unique<ASTcons>(exp_list({
+                                    new ASTreal(d[0], (*term)->where),
+                                    new ASTreal(d[1], (*term)->where)
+                                }));
                                 (*term)->modType = (*term)->modType == ASTmodTerm::xyz ?
                                     ASTmodTerm::x : ASTmodTerm::size;
                                 (*term)->argCount = 2;
                                 
                                 ASTmodTerm::modTypeEnum ztype = (*term)->modType == ASTmodTerm::size ?
                                     ASTmodTerm::zsize : ASTmodTerm::z;
-                                ASTmodTerm* zmod = new ASTmodTerm(ztype, new ASTreal(d[2], (*term)->where), (*term)->where);
+                                term_ptr zmod = std::make_unique<ASTmodTerm>(ztype, new ASTreal(d[2], (*term)->where), (*term)->where);
                                 zmod->argCount = 1;
                                 
-                                // Check if xy part is the identity transform and only save it if it is not
+                                // Check if sizexy part is the identity transform and only save it if it is not
                                 if (d[0] == 1.0 && d[1] == 1.0 && (*term)->modType == ASTmodTerm::size)
                                 {
-                                    // Drop xy term and just save z term if xy term
+                                    // Drop sizexy term and just save sizez term if sizexy term
                                     // is the identity transform
-                                    (*term).reset(zmod);
+                                    (*term) = std::move(zmod);
                                 } else {
-                                    modExp.emplace_back(zmod);
+                                    modExp.emplace_back(std::move(zmod));
                                 }
-                                modExp.emplace_back(std::move(*term));
-                                continue;
+                                break;
                             }
                             
                             ASTexpArray xyzargs = Extract(std::move((*term)->args));
                             ASTexpression* xyargs = nullptr;
                             ASTexpression* zargs = nullptr;
                             for (exp_ptr& arg: xyzargs) {
-                                if (!xyargs || xyargs->evaluate(nullptr, 0) < 2) {
+                                if (!xyargs || xyargs->evaluate() < 2) {
                                     xyargs = Append(xyargs, arg.release());
                                 } else {
                                     zargs = Append(zargs, arg.release());
                                 }
                             }
-                            if (xyargs && zargs && xyargs->evaluate(nullptr, 0) == 2) {
+                            if (xyargs && zargs && xyargs->evaluate() == 2) {
                                 // We have successfully split the 3-tuple into a 2-tuple and a scalar
                                 (*term)->args.reset(xyargs);
                                 (*term)->modType = (*term)->modType == ASTmodTerm::xyz ?
                                     ASTmodTerm::x : ASTmodTerm::size;
+                                (*term)->isConstant = (*term)->args->isConstant;
+                                (*term)->isNatural = (*term)->args->isNatural;
+                                (*term)->mLocality = (*term)->args->mLocality;
                                 (*term)->argCount = 2;
                                 
                                 ASTmodTerm::modTypeEnum ztype = (*term)->modType == ASTmodTerm::size ?
                                     ASTmodTerm::zsize : ASTmodTerm::z;
-                                ASTmodTerm* zmod = new ASTmodTerm(ztype, zargs, (*term)->where);
+                                term_ptr zmod = std::make_unique<ASTmodTerm>(ztype, zargs, (*term)->where);
+                                zmod->isNatural = zargs->isNatural;
+                                zmod->mLocality = zargs->mLocality;
                                 zmod->argCount = 1;
                                 
                                 if ((*term)->modType == ASTmodTerm::size && xyargs->isConstant &&
@@ -2878,16 +2973,15 @@ namespace AST {
                                 {
                                     // Drop xy term and just save z term if xy term
                                     // is the identity transform
-                                    (*term).reset(zmod);
+                                    (*term) = std::move(zmod);
                                 } else {
-                                    modExp.emplace_back(zmod);
+                                    modExp.emplace_back(std::move(zmod));
                                 }
                             } else {    // No dice, put it all back
                                 xyargs = Append(xyargs, zargs);
                                 (*term)->args.reset(xyargs);
                             }
-                            modExp.emplace_back(std::move(*term));
-                            continue;
+                            break;
                         }
                         default:
                             break;
@@ -2942,7 +3036,7 @@ namespace AST {
                 
                 mArgs->entropy(entString);
                 if (bound->mStackIndex == -1) {
-                    mData.reset(new double[mCount]);
+                    mData = std::make_unique<double[]>(mCount);
                     if (bound->mDefinition->mExpression->evaluate(mData.get(), mCount) != mCount) {
                         CfdgError::Error(where, "Error computing vector data");
                         isConstant = false;
@@ -2966,7 +3060,7 @@ namespace AST {
                     mLength = static_cast<int>(data);
                 }
                 
-                if (mArgs->mType != NumericType || mArgs->evaluate(nullptr, 0) != 1)
+                if (mArgs->mType != NumericType || mArgs->evaluate() != 1)
                     CfdgError::Error(mArgs->where, "Vector index must be a scalar numeric expression");
 
                 if (mStride < 0 || mLength < 0)
@@ -2982,86 +3076,6 @@ namespace AST {
                 break;
         }
         return nullptr;
-    }
-    
-    void
-    ASTmodification::evalConst()
-    {
-        static const std::map<ASTmodTerm::modTypeEnum, int> ClassMap = {
-            { ASTmodTerm::unknownType,  ASTmodification::NotAClass },
-            { ASTmodTerm::x,            ASTmodification::GeomClass | ASTmodification::PathOpClass },
-            { ASTmodTerm::y,            ASTmodification::GeomClass | ASTmodification::PathOpClass },
-            { ASTmodTerm::z,            ASTmodification::ZClass },
-            { ASTmodTerm::xyz,          ASTmodification::GeomClass | ASTmodification::ZClass },
-            { ASTmodTerm::transform,    ASTmodification::GeomClass },
-            { ASTmodTerm::size,         ASTmodification::GeomClass },
-            { ASTmodTerm::sizexyz,      ASTmodification::GeomClass | ASTmodification::ZClass },
-            { ASTmodTerm::rot,          ASTmodification::GeomClass | ASTmodification::PathOpClass },
-            { ASTmodTerm::skew,         ASTmodification::GeomClass },
-            { ASTmodTerm::flip,         ASTmodification::GeomClass },
-            { ASTmodTerm::zsize,        ASTmodification::ZClass },
-            { ASTmodTerm::hue,          ASTmodification::HueClass },
-            { ASTmodTerm::sat,          ASTmodification::SatClass },
-            { ASTmodTerm::bright,       ASTmodification::BrightClass },
-            { ASTmodTerm::alpha,        ASTmodification::AlphaClass },
-            { ASTmodTerm::hueTarg,      ASTmodification::HueClass },
-            { ASTmodTerm::satTarg,      ASTmodification::SatClass },
-            { ASTmodTerm::brightTarg,   ASTmodification::BrightClass },
-            { ASTmodTerm::alphaTarg,    ASTmodification::AlphaClass },
-            { ASTmodTerm::targHue,      ASTmodification::HueTargetClass },
-            { ASTmodTerm::targSat,      ASTmodification::SatTargetClass },
-            { ASTmodTerm::targBright,   ASTmodification::BrightTargetClass },
-            { ASTmodTerm::targAlpha,    ASTmodification::AlphaTargetClass },
-            { ASTmodTerm::time,         ASTmodification::TimeClass },
-            { ASTmodTerm::timescale,    ASTmodification::TimeClass },
-            { ASTmodTerm::stroke,       ASTmodification::StrokeClass },
-            { ASTmodTerm::param,        ASTmodification::ParamClass },
-            { ASTmodTerm::x1,           ASTmodification::PathOpClass },
-            { ASTmodTerm::y1,           ASTmodification::PathOpClass },
-            { ASTmodTerm::x2,           ASTmodification::PathOpClass },
-            { ASTmodTerm::y2,           ASTmodification::PathOpClass },
-            { ASTmodTerm::xrad,         ASTmodification::PathOpClass },
-            { ASTmodTerm::yrad,         ASTmodification::PathOpClass },
-            { ASTmodTerm::modification, -1 }
-        };
-        
-        int nonConstant = 0;
-        
-        ASTtermArray temp;
-        temp.swap(modExp);
-
-        for (term_ptr& mod: temp) {
-            if (!mod) {
-                CfdgError::Error(where, "Unknown term in shape adjustment");
-                continue;
-            }
-            
-            // Put in code for separating color changes and target color changes
-                        
-            int mc = ClassMap.at(mod->modType);
-            modClass |= mc;
-            if (!mod->isConstant)
-                nonConstant |= mc;
-            bool keepThisOne = (mc & nonConstant) != 0;
-            
-            if (Builder::CurrentBuilder->mInPathContainer && (mc & ZClass))
-                CfdgError::Warning(mod->where, "Z changes are not supported within paths");
-            if (Builder::CurrentBuilder->mInPathContainer && (mc & TimeClass))
-                CfdgError::Warning(mod->where, "Time changes are not supported within paths");
-            
-            try {
-                if (!keepThisOne)
-                    mod->evaluate(modData, false, nullptr);
-            } catch (DeferUntilRuntime&) {
-                keepThisOne = true;
-            }
-            
-            if (keepThisOne) {
-                assert(mod->modType != ASTmodTerm::param);
-                Simplify(mod->args);
-                modExp.push_back(std::move(mod));
-            }
-        }
     }
     
     void

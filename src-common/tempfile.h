@@ -38,10 +38,13 @@ public:
     std::ostream* forWrite();
     std::istream* forRead();
 
-    const std::string& type()   { return mTypeName; }
-    int         number() { return mNum; }
+    const std::string& type() const;
+    const std::string& name() const { return mPath; }
+    int         number() const { return mNum; }
+    void        release() { mWritten = false; }
+    bool        written() const { return mWritten; }
     
-    TempFile(AbstractSystem*, AbstractSystem::TempType t, const char* type, int num);
+    TempFile(AbstractSystem*, AbstractSystem::TempType type, int num);
     TempFile(TempFile&&) noexcept;
     TempFile& operator=(TempFile&&) noexcept;
     TempFile(const TempFile&) = delete;
@@ -52,7 +55,6 @@ private:
     AbstractSystem*     mSystem;
     std::string mPath;
     AbstractSystem::TempType mType;
-    std::string mTypeName;
     int         mNum;
     bool        mWritten;
     void        erase();

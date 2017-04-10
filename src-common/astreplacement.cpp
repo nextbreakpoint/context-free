@@ -59,12 +59,10 @@ namespace AST {
     }
     
     void
-    ASTrepContainer::addLoopParameter(int index, bool natural, bool local,
-                                      const yy::location& nameLoc)
+    ASTrepContainer::addLoopParameter(int index, const yy::location& nameLoc)
     {
-        mParameters.emplace_back(index, natural, local, nameLoc);
+        mParameters.emplace_back(index, nameLoc);
         mParameters.back().checkParam(nameLoc, nameLoc);
-        mStackCount += mParameters.back().mTuplesize;
     }
     
     void
@@ -72,11 +70,8 @@ namespace AST {
     {
         // Delete all of the incomplete parameters inserted during parse
         if (ph == CompilePhase::TypeCheck) {
-            mStackCount = 0;
             for (size_t i = 0; i < mParameters.size(); ++i)
-                if (mParameters[i].isParameter  || mParameters[i].isLoopIndex) {
-                    mStackCount += mParameters[i].mTuplesize;
-                } else {
+                if (!mParameters[i].isParameter  && !mParameters[i].isLoopIndex) {
                     mParameters.resize(i);
                     break;
                 }
@@ -94,7 +89,7 @@ namespace AST {
 
     
     ASTreplacement::ASTreplacement(ASTruleSpecifier&& shapeSpec, mod_ptr mods,
-                                   const yy::location& loc, repElemListEnum t)
+                                   const yy::location& loc, repElemListEnum t) noexcept
     : mShapeSpec(std::move(shapeSpec)), mRepType(t), mPathOp(unknownPathop),
       mChildChange(std::move(mods), loc), mLocation(loc)
     {
@@ -136,8 +131,8 @@ namespace AST {
     : ASTreplacement(std::move(mods), nameLoc + argsLoc, empty), mLoopArgs(std::move(args)),
       mLoopModHolder(nullptr), mLoopIndexName(nameIndex), mLoopName(name)
     {
-        mLoopBody.addLoopParameter(mLoopIndexName, false, false, mLocation);
-        mFinallyBody.addLoopParameter(mLoopIndexName, false, false, mLocation);
+        mLoopBody.addLoopParameter(mLoopIndexName, mLocation);
+        mFinallyBody.addLoopParameter(mLoopIndexName, mLocation);
     }
     
     ASTtransform::ASTtransform(const yy::location& loc, exp_ptr mods)
@@ -145,15 +140,15 @@ namespace AST {
     {
     }
     
-    ASTdefine::ASTdefine(const std::string& name, const yy::location& loc)
+    ASTdefine::ASTdefine(std::string&& name, const yy::location& loc)
     : ASTreplacement(nullptr, loc, empty), mDefineType(StackDefine),
-      mType(NoType), isNatural(false), mStackCount(0), mName(std::move(name)),
+      mType(NoType), isNatural(false), mParamSize(0), mName(std::move(name)),
       mConfigDepth(-1)
     {
         // Set the Modification entropy to parameter name, not its own contents
         int i = 0;
         mChildChange.modData.mRand64Seed.seed();
-        mChildChange.modData.mRand64Seed.xorString(name.c_str(), i);
+        mChildChange.modData.mRand64Seed.xorString(mName.c_str(), i);
     }
     
     void
@@ -162,16 +157,16 @@ namespace AST {
     {
         double data[3];
         switch (e->evaluate(data, 3, rti)) {
-        case 1:
-            data[1] = data[0];
-            data[0] = 0.0;
-        case 2:
-            data[2] = 1.0;
-        case 3:
-            break;
-        default:
-            CfdgError::Error(loc, "A loop must have one to three index parameters.");
-            break;
+            case 1:
+                data[1] = data[0];
+                data[0] = 0.0;
+            case 2:
+                data[2] = 1.0;
+            case 3:
+                break;
+            default:
+                CfdgError::Error(loc, "A loop must have one to three index parameters.");
+                break;
         }
         start = data[0];
         end = data[1];
@@ -194,8 +189,8 @@ namespace AST {
     ASTswitch::unify()
     {
         if (mElseBody.mPathOp != mPathOp) mPathOp = unknownPathop;
-        for (switchMap::value_type& caseEntry: mCaseStatements)
-            if (caseEntry.second->mPathOp != mPathOp)
+        for (auto&& _case: mCases)
+            if (_case.second->mPathOp != mPathOp)
                 mPathOp = unknownPathop;
     }
 
@@ -214,31 +209,40 @@ namespace AST {
                 unsigned cmd;
                 while (!agg::is_stop(cmd = shape.vertex(&x, &y))) {
                     if (agg::is_vertex(cmd)) {
-                        exp_ptr a(new ASTcons{ new ASTreal(x, CfdgError::Default),
-                                               new ASTreal(y, CfdgError::Default) });
-                        ASTpathOp* op = new ASTpathOp(agg::is_move_to(cmd) ? move_op : line_op,
+                        exp_ptr a = std::make_unique<ASTcons>(exp_list({
+                            new ASTreal(x, CfdgError::Default),
+                            new ASTreal(y, CfdgError::Default)
+                        }));
+                        rep_ptr op = std::make_unique<ASTpathOp>(agg::is_move_to(cmd) ? move_op : line_op,
                             std::move(a), CfdgError::Default);
-                        mRuleBody.mBody.emplace_back(op);
+                        mRuleBody.mBody.emplace_back(std::move(op));
                     }
                 }
             } else {
-                exp_ptr a(new ASTcons{ new ASTreal(0.5, CfdgError::Default),
-                                       new ASTreal(0.0, CfdgError::Default) });
-                ASTpathOp* op = new ASTpathOp(move_op, std::move(a), CfdgError::Default);
-                mRuleBody.mBody.emplace_back(op);
-                a.reset(new ASTcons{ new ASTreal(-0.5, CfdgError::Default),
-                                     new ASTreal( 0.0, CfdgError::Default),
-                                     new ASTreal( 0.5, CfdgError::Default) });
-                op = new ASTpathOp(arc_op, std::move(a), CfdgError::Default);
-                mRuleBody.mBody.emplace_back(op);
-                a.reset(new ASTcons{ new ASTreal( 0.5, CfdgError::Default),
-                                     new ASTreal( 0.0, CfdgError::Default),
-                                     new ASTreal( 0.5, CfdgError::Default) });
-                op = new ASTpathOp(arc_op, std::move(a), CfdgError::Default);
-                mRuleBody.mBody.emplace_back(op);
+                exp_ptr a = std::make_unique<ASTcons>(exp_list({
+                    new ASTreal(0.5, CfdgError::Default),
+                    new ASTreal(0.0, CfdgError::Default)
+                }));
+                rep_ptr op = std::make_unique<ASTpathOp>(move_op, std::move(a), CfdgError::Default);
+                mRuleBody.mBody.emplace_back(std::move(op));
+                a = std::make_unique<ASTcons>(exp_list({
+                    new ASTreal(-0.5, CfdgError::Default),
+                    new ASTreal( 0.0, CfdgError::Default),
+                    new ASTreal( 0.5, CfdgError::Default)
+                }));
+                op = std::make_unique<ASTpathOp>(arc_op, std::move(a), CfdgError::Default);
+                mRuleBody.mBody.emplace_back(std::move(op));
+                a = std::make_unique<ASTcons>(exp_list({
+                    new ASTreal( 0.5, CfdgError::Default),
+                    new ASTreal( 0.0, CfdgError::Default),
+                    new ASTreal( 0.5, CfdgError::Default)
+                }));
+                op = std::make_unique<ASTpathOp>(arc_op, std::move(a), CfdgError::Default);
+                mRuleBody.mBody.emplace_back(std::move(op));
             }
-            mRuleBody.mBody.emplace_back(new ASTpathOp(close_op, exp_ptr(),
-                CfdgError::Default));
+            rep_ptr op = std::make_unique<ASTpathOp>(close_op, exp_ptr(),
+                                                     CfdgError::Default);
+            mRuleBody.mBody.emplace_back(std::move(op));
             mRuleBody.mRepType = ASTreplacement::op;
             mRuleBody.mPathOp = AST::MOVETO;
         }
@@ -440,8 +444,11 @@ namespace AST {
             return;
         }
         
-        switchMap::const_iterator it = mCaseStatements.find(static_cast<int>(floor(caseValue)));
-        if (it != mCaseStatements.end()) (*it).second->traverse(parent, tr, r);
+        caseType i = static_cast<caseType>(floor(caseValue));
+        caseRange cr{i, i};
+        
+        switchMap::const_iterator it = mCaseMap.find(cr);
+        if (it != mCaseMap.end()) (*it).second->traverse(parent, tr, r);
         else mElseBody.traverse(parent, tr, r);
     }
     
@@ -480,14 +487,20 @@ namespace AST {
     }
     
     void
-    ASTrule::traverse(const Shape& parent, bool tr, RendererAST* r) const
+    ASTrule::traverse(const Shape&, bool, RendererAST*) const
+    {
+        assert(false);
+    }
+    
+    void
+    ASTrule::traverseRule(Shape& parent, RendererAST* r) const
     {
         r->mCurrentSeed = parent.mWorldState.mRand64Seed;
         
         if (isPath) {
             r->processPrimShape(parent, this);
         } else {
-            mRuleBody.traverse(parent, tr, r, true);
+            mRuleBody.traverse(parent, false, r, true);
         }
     }
     
@@ -570,7 +583,7 @@ namespace AST {
                 mCachedPath = std::move(r->mCurrentPath);
                 mCachedPath->mCached = true;
                 mCachedPath->mParameters = parent.mParameters;
-                r->mCurrentPath.reset(new ASTcompiledPath());
+                r->mCurrentPath = std::make_unique<ASTcompiledPath>();
             } else {
                 r->mCurrentPath->mPath.remove_all();
                 r->mCurrentPath->mCommandInfo.clear();
@@ -611,10 +624,10 @@ namespace AST {
                 }
                 break;
             case CompilePhase::Simplify:
-                r = mShapeSpec.simplify();          // always returns this
-                assert(r == &mShapeSpec);
+                r = mShapeSpec.simplify();          // always returns nullptr
+                assert(r == nullptr);
                 r = mChildChange.simplify();        // ditto
-                assert(r == &mChildChange);
+                assert(r == nullptr);
                 break;
         }
     }
@@ -652,14 +665,14 @@ namespace AST {
                     mLoopData[1] + mLoopData[2] < 9007199254740992.;
                     mLoopArgs.reset();
                 } else {
-                    int c = mLoopArgs->evaluate(nullptr, 0);
+                    int c = mLoopArgs->evaluate();
                     if (c < 1 || c > 3) {
                         CfdgError::Error(mLoopArgs->where, "A loop must have one to three index parameters.");
                     }
                     
                     for (size_t i = 0, count = 0; i < mLoopArgs->size(); ++i) {
                         const ASTexpression* loopArg = mLoopArgs->getChild(i);
-                        int num = loopArg->evaluate(nullptr, 0);
+                        int num = loopArg->evaluate();
                         switch (count) {
                             case 0:
                                 if (loopArg->isNatural)
@@ -749,7 +762,7 @@ namespace AST {
         
         switch (ph) {
             case CompilePhase::TypeCheck:
-                if (mCondition->mType != NumericType || mCondition->evaluate(nullptr, 0) != 1)
+                if (mCondition->mType != NumericType || mCondition->evaluate() != 1)
                     CfdgError::Error(mCondition->where, "If condition must be a numeric scalar");
                 break;
             case CompilePhase::Simplify:
@@ -763,15 +776,63 @@ namespace AST {
     {
         ASTreplacement::compile(ph);
         Compile(mSwitchExp, ph);
-        for (auto& casepair: mCaseStatements)
-            casepair.second->compile(ph);
+        for (auto&& _case: mCases) {
+            Compile(_case.first, ph);
+            _case.second->compile(ph);
+        }
         mElseBody.compile(ph);
         
         switch (ph) {
-            case CompilePhase::TypeCheck:
-                if (mSwitchExp->mType != NumericType || mSwitchExp->evaluate(nullptr, 0) != 1)
+            case CompilePhase::TypeCheck: {
+                if (mSwitchExp->mType != NumericType || mSwitchExp->evaluate() != 1)
                     CfdgError::Error(mSwitchExp->where, "Switch selector must be a numeric scalar");
+                
+                // Build the switch map from the stored case value expressions
+                double val[2] = { 0.0 };
+                for (auto&& _case: mCases) {
+                    const ASTexpression* valExp = _case.first.get();
+                    ASTrepContainer* body = _case.second.get();
+                    for (size_t i = 0; i < valExp->size(); ++i) {
+                        const ASTexpression* term = valExp->getChild(i);
+                        const ASTfunction* func = dynamic_cast<const ASTfunction*>(term);
+                        caseType high = 0, low = 0;
+                        try {
+                            if (func && func->functype == ASTfunction::RandOp) {
+                                // The term is a range, get the bounds
+                                if (func->arguments->evaluate(val, 2) != 2) {
+                                    CfdgError::Error(func->where, "Case range cannot be evaluated");
+                                    continue;
+                                } else {
+                                    low = static_cast<caseType>(floor(val[0]));
+                                    high = static_cast<caseType>(floor(val[1]));
+                                    if (high <= low) {
+                                        CfdgError::Error(func->where, "Case range is reversed");
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                // Not a range, must be a single value
+                                if (term->evaluate(val, 1) != 1) {
+                                    CfdgError::Error(term->where, "Case value cannot be evaluated");
+                                    continue;
+                                } else {
+                                    low = high = static_cast<caseType>(floor(val[0]));
+                                }
+                            }
+                            
+                            caseRange range{low, high};
+                            if (mCaseMap.count(range)) {
+                                CfdgError::Error(term->where, "Case value already in use");
+                            } else {
+                                mCaseMap[range] = body;
+                            }
+                        } catch (DeferUntilRuntime&) {
+                            CfdgError::Error(term->where, "Case expression is not constant");
+                        }
+                    }
+                }
                 break;
+            }
             case CompilePhase::Simplify:
                 Simplify(mSwitchExp);
                 break;
@@ -784,7 +845,6 @@ namespace AST {
         if (mDefineType == FunctionDefine || mDefineType == LetDefine) {
             ASTrepContainer tempCont;
             tempCont.mParameters = mParameters;     // copy
-            tempCont.mStackCount = mStackCount;
             Builder::CurrentBuilder->push_repContainer(tempCont);
             ASTreplacement::compile(ph);
             Compile(mExpression, ph);
@@ -813,7 +873,7 @@ namespace AST {
                 expType t = mExpression ? mExpression->mType : ModType;
                 int sz = 1;
                 if (t == NumericType)
-                    sz = mExpression->evaluate(nullptr, 0);
+                    sz = mExpression->evaluate();
                 if (t == ModType)
                     sz = ModificationSize;
                 if (mDefineType == FunctionDefine) {
@@ -846,9 +906,8 @@ namespace AST {
                     ASTparameter& param = Builder::CurrentBuilder->
                         mContainerStack.back()->
                         addDefParameter(mShapeSpec.shapeType, this, mLocation, mLocation);
-                    if (param.isParameter || !param.mDefinition) {
+                    if (mDefineType == StackDefine) {
                         param.mStackIndex = Builder::CurrentBuilder->mLocalStackDepth;
-                        Builder::CurrentBuilder->mContainerStack.back()->mStackCount += param.mTuplesize;
                         Builder::CurrentBuilder->mLocalStackDepth += param.mTuplesize;
                     }
                 }
@@ -929,7 +988,7 @@ namespace AST {
                 if (w) {
                     if (mParameters)
                         CfdgError::Error(w->where, "Cannot have a stroke adjustment in a v3 path command");
-                    else if (w->size() != 1 || w->mType != NumericType || w->evaluate(nullptr, 0) != 1)
+                    else if (w->size() != 1 || w->mType != NumericType || w->evaluate() != 1)
                         CfdgError::Error(w->where, "Stroke adjustment is ill-formed");
                     else
                         mParameters = std::move(w);
@@ -969,7 +1028,7 @@ namespace AST {
                 if (stroke) {
                     if (mFlags & CF_FILL)
                         CfdgError::Warning(stroke->where, "Stroke width only useful for STROKE commands");
-                    if (stroke->mType != NumericType || stroke->evaluate(nullptr, 0) != 1) {
+                    if (stroke->mType != NumericType || stroke->evaluate() != 1) {
                         CfdgError::Error(stroke->where, "Stroke width expression must be numeric scalar");
                     } else if (!stroke->isConstant ||
                                stroke->evaluate(&mStrokeWidth, 1) != 1)
@@ -1199,8 +1258,8 @@ namespace AST {
     bool
     ASTrule::compareLT(const ASTrule* a, const ASTrule* b)
     {
-        return  (a->mNameIndex == b->mNameIndex) ? 
-        (a->mWeight < b->mWeight) : (a->mNameIndex < b->mNameIndex);
+        return a->mNameIndex < b->mNameIndex || (a->mNameIndex == b->mNameIndex &&
+                                                 a->mWeight < b->mWeight);
     }
     
     void
@@ -1230,7 +1289,7 @@ namespace AST {
     ASTpathOp::checkArguments()
     {
         if (mArguments)
-            mArgCount = mArguments->evaluate(nullptr, 0);
+            mArgCount = mArguments->evaluate();
 
         for (size_t i = 0; mArguments && i < mArguments->size(); ++i) {
             const ASTexpression* temp = mArguments->getChild(i);
@@ -1290,19 +1349,19 @@ namespace AST {
     parseXY(exp_ptr ax, exp_ptr ay, double def, const yy::location& loc)
     {
         if (!ax)
-            ax.reset(new ASTreal(def, loc));
+            ax = std::make_unique<ASTreal>(def, loc);
         int sz = 0;
         if (ax->mType == NumericType)
-            sz = ax->evaluate(nullptr, 0);
+            sz = ax->evaluate();
         else
             CfdgError::Error(ax->where, "Path argument must be a scalar value");
         
         if (sz == 1 && !ay)
-            ay.reset(new ASTreal(def, loc));
+            ay = std::make_unique<ASTreal>(def, loc);
         
         if (ay && sz >= 0) {
             if (ay->mType == NumericType)
-                sz += ay->evaluate(nullptr, 0);
+                sz += ay->evaluate();
             else
                 CfdgError::Error(ay->where, "Path argument must be a scalar value");
         }
@@ -1409,7 +1468,7 @@ namespace AST {
                     if (!angle)
                         angle = new ASTreal(0.0, mLocation);
                     
-                    if (angle->mType != NumericType || angle->evaluate(nullptr, 0) != 1)
+                    if (angle->mType != NumericType || angle->evaluate() != 1)
                         CfdgError(angle->where, "Arc angle must be a scalar value");
                     
                     mArguments.reset(xy->append(rxy)->append(angle));
@@ -1418,7 +1477,7 @@ namespace AST {
                     if (!radius)
                         radius = new ASTreal(1.0, mLocation);
                     
-                    if (radius->mType != NumericType || radius->evaluate(nullptr, 0) != 1)
+                    if (radius->mType != NumericType || radius->evaluate() != 1)
                         CfdgError::Error(radius->where, "Arc radius must be a scalar value");
                     
                     mArguments.reset(xy->append(radius));
@@ -1455,7 +1514,7 @@ namespace AST {
         rejectTerm(ax2);
         rejectTerm(ay2);
         
-        mArgCount = mArguments ? mArguments->evaluate(nullptr, 0) : 0;
+        mArgCount = mArguments ? mArguments->evaluate() : 0;
         mOldStyleArguments.reset();
     }
 }

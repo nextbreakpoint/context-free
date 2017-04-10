@@ -62,15 +62,17 @@ unsigned int RendererImpl::MaxMergeFiles = 0;      // maximum number of files to
 const double SHAPE_BORDER = 1.0; // multiplier of shape size when calculating bounding box
 const double FIXED_BORDER = 8.0; // fixed extra border, in pixels
 
-RendererImpl::RendererImpl(CFDGImpl* cfdg,
+RendererImpl::RendererImpl( const cfdg_ptr& cfdg,
                             int width, int height, double minSize,
                             int variation, double border)
-    : RendererAST(width, height), m_cfdg(cfdg), m_canvas(nullptr), mColorConflict(false), 
+    : RendererAST(width, height), m_cfdg(std::dynamic_pointer_cast<CFDGImpl>(cfdg)),
+      m_canvas(nullptr), mColorConflict(false),
       m_maxShapes(500000000), mVariation(variation), m_border(border), 
       mScaleArea(0.0), mScale(0.0), m_currScale(0.0), m_currArea(0.0), 
       m_minSize(minSize), mFrameTimeBounds(1.0, -Renderer::Infinity, Renderer::Infinity),
       shapeCopies(primShape::shapeMap), shapeMap{}
 {
+    assert(m_cfdg);
     if (MoveFinishedAt == 0) {
 #ifndef DEBUG_SIZES
         size_t mem = m_cfdg->system()->getPhysicalMemory();
@@ -155,7 +157,7 @@ RendererImpl::init()
                             "CF::MaxNatural must be < 9007199254740992");
     }
     
-    mCurrentPath.reset(new AST::ASTcompiledPath());
+    mCurrentPath = std::make_unique<AST::ASTcompiledPath>();
     
     m_cfdg->getSymmetry(mSymmetryOps, this);
     m_cfdg->setBackgroundColor(this);
@@ -203,15 +205,6 @@ RendererImpl::resetSize(int x, int y)
 RendererImpl::~RendererImpl()
 {
     cleanup();
-    if (AbortEverything)
-        return;
-#ifdef EXTREME_PARAM_DEBUG
-    AbstractSystem* sys = system();
-    for (auto &p: StackRule::ParamMap) {
-        if (p.second > 0)
-            sys->message("Parameter at %p is still alive, it is param number %d\n", p.first, p.second);
-    }
-#endif
 }
 
 class Stopped { };
@@ -223,22 +216,11 @@ RendererImpl::cleanup()
     m_finishedFiles.clear();
     m_unfinishedFiles.clear();
 
-    try {
-        std::function <void (const Shape& s)> checkStop([](const Shape& s) {
-            if (Renderer::AbortEverything)
-                throw Stopped();
-        });
-        for_each(mUnfinishedShapes.begin(), mUnfinishedShapes.end(), checkStop);
-        for_each(mFinishedShapes.begin(), mFinishedShapes.end(), checkStop);
-    } catch (Stopped&) {
-        return;
-    } catch (exception& e) {
-        system()->catastrophicError(e.what());
-        return;
-    }
+    // Delete all shapes and parameters (except those in the AST)
     mUnfinishedShapes.clear();
     mFinishedShapes.clear();
     
+    // Delete the global definitions
     unwindStack(0, m_cfdg->mCFDGcontents.mParameters);
     
     mCurrentPath.reset();
@@ -270,7 +252,7 @@ RendererImpl::outputPrep(Canvas* canvas)
             agg::trans_affine tr;
             m_cfdg->isTiled(&tr);
             m_cfdg->isFrieze(&tr);
-            m_tiledCanvas.reset(new tiledCanvas(canvas, tr, m_frieze));
+            m_tiledCanvas = std::make_unique<tiledCanvas>(canvas, tr, m_frieze);
             m_tiledCanvas->scale(m_currScale);
             m_canvas = m_tiledCanvas.get();
         }
@@ -321,7 +303,7 @@ RendererImpl::run(Canvas * canvas, bool partialDraw)
         if (requestFinishUp) break;
         
         if (mUnfinishedShapes.empty()) break;
-        if ((m_stats.shapeCount + m_stats.toDoCount) > m_maxShapes)
+        if (std::max(m_stats.shapeCount, m_stats.toDoCount) > m_maxShapes)
             break;
 
         // Get the largest unfinished shape
@@ -333,7 +315,7 @@ RendererImpl::run(Canvas * canvas, bool partialDraw)
         try {
             const ASTrule* rule = m_cfdg->findRule(s.mShapeType, s.mWorldState.mRand64Seed.getDouble());
             m_drawingMode = false;      // shouldn't matter
-            rule->traverse(s, false, this);
+            rule->traverseRule(s, this);
         } catch (CfdgError& e) {
             requestStop = true;
             system()->error();
@@ -360,11 +342,9 @@ RendererImpl::run(Canvas * canvas, bool partialDraw)
         outputFinal();
     }
     
-    if (!requestStop) {
-        outputStats();
-        if (m_canvas)
-            system()->message("Done.");
-    }
+    outputStats();
+    if (m_canvas)
+        system()->message("Done.");
     
     if (!m_canvas && m_frieze)
         rescaleOutput(m_width, m_height, true);
@@ -511,35 +491,33 @@ OutputBounds::smooth(int window)
 
 
 void
-RendererImpl::animate(Canvas* canvas, int frames, bool zoom)
+RendererImpl::animate(Canvas* canvas, int frames, int frame, bool zoom)
 {
-    outputPrep(canvas);
-    
     const bool ftime = m_cfdg->usesFrameTime;
     zoom = zoom && !ftime;
-    if (ftime)
-        cleanup();
 
-    // start with a blank frame
-    
+    if (!ftime){
+        system()->message("Precomputing time/space bounds");
+        run(nullptr, false);
+    }
+
     int curr_width = m_width;
     int curr_height = m_height;
     rescaleOutput(curr_width, curr_height, true);
     
-    m_canvas->start(true, m_cfdg->getBackgroundColor(),
-        curr_width, curr_height);
-    m_canvas->end();
-
+    outputPrep(canvas);
+    
     double frameInc = (mTimeBounds.tend - mTimeBounds.tbegin) / frames;
     
     OutputBounds outputBounds(frames, mTimeBounds, curr_width, curr_height, *this);
-    if (zoom) {
+    if (!ftime) {
         system()->message("Computing zoom");
 
         try {
             forEachShape(true, [&](const FinishedShape& s) {
                 outputBounds.apply(s);
             });
+            m_outputSoFar = 0;  // gets set by forEachShape, must be cleared
             //outputBounds.finalAccumulate();
             outputBounds.backwardFilter(10.0);
             //outputBounds.smooth(3);
@@ -560,6 +538,7 @@ RendererImpl::animate(Canvas* canvas, int frames, bool zoom)
 
     for (int frameCount = 1; frameCount <= frames; ++frameCount)
     {
+        if (frame && frameCount != frame) continue;
         system()->message("Generating frame %d of %d", frameCount, frames);
         
         if (zoom) mBounds = outputBounds.frameBounds(frameCount - 1);
@@ -582,7 +561,6 @@ RendererImpl::animate(Canvas* canvas, int frames, bool zoom)
                 return;
             }
             run(canvas, false);
-            m_canvas = canvas;
         } else {
             outputFinal();
             outputStats();
@@ -590,6 +568,11 @@ RendererImpl::animate(Canvas* canvas, int frames, bool zoom)
         
         if (ftime)
             cleanup();
+        
+        if (canvas->mError) {
+            system()->message("An error occurred generating frame %d", frameCount);
+            break;
+        }
 
         if (requestStop || requestFinishUp) break;
     }
@@ -597,11 +580,12 @@ RendererImpl::animate(Canvas* canvas, int frames, bool zoom)
     mBounds = saveBounds;
     m_stats.animating = false;
     outputStats();
-    system()->message("Animation of %d frames complete", frames);
+    if (frame == 0)
+        system()->message("Animation of %d frames complete", frames);
 }
 
 void
-RendererImpl::processShape(const Shape& s)
+RendererImpl::processShape(Shape& s)
 {
     double area = s.area();
     if (!isfinite(area)) {
@@ -621,7 +605,7 @@ RendererImpl::processShape(const Shape& s)
         // only add it if it's big enough (or if there are no finished shapes yet)
         if (!mBounds.valid() || (area * mScaleArea >= m_minArea)) {
             m_stats.toDoCount++;
-            mUnfinishedShapes.push_back(s);
+            mUnfinishedShapes.push_back(std::move(s));
             push_heap(mUnfinishedShapes.begin(), mUnfinishedShapes.end());
         }
     } else if (m_cfdg->getShapeType(s.mShapeType) == CFDGImpl::pathType) {
@@ -638,16 +622,14 @@ RendererImpl::processShape(const Shape& s)
 }
 
 void
-RendererImpl::processPrimShape(const Shape& s, const ASTrule* path)
+RendererImpl::processPrimShape(Shape& s, const ASTrule* path)
 {
-    size_t num = mSymmetryOps.size();
-    if (num == 0 || s.mShapeType == primShape::fillType) {
-        Shape copy(s);
-        processPrimShapeSiblings(std::move(copy), path);
+    if (mSymmetryOps.empty() || s.mShapeType == primShape::fillType) {
+        processPrimShapeSiblings(std::move(s), path);
     } else {
-        for (size_t i = 0; i < num; ++i) {
+        for (auto&& xform: mSymmetryOps) {
             Shape sym(s);
-            sym.mWorldState.m_transform.multiply(mSymmetryOps[i]);
+            sym.mWorldState.m_transform.multiply(xform);
             processPrimShapeSiblings(std::move(sym), path);
         }
     }
@@ -656,7 +638,6 @@ RendererImpl::processPrimShape(const Shape& s, const ASTrule* path)
 void
 RendererImpl::processPrimShapeSiblings(Shape&& s, const ASTrule* path)
 {
-    m_stats.shapeCount++;
     if (mScale == 0.0) {
         // If we don't know the approximate scale yet then just
         // make an educated guess.
@@ -674,6 +655,10 @@ RendererImpl::processPrimShapeSiblings(Shape&& s, const ASTrule* path)
             if (s.mShapeType < 3) attr = &(shapeMap[s.mShapeType]);
             processPathCommand(s, attr);
         }
+        // Drop off-canvas shapes if CF::Size is specified, or any shape where
+        // something weird happened while determining its bounds
+        if (!mPathBounds.valid() || (m_sized && !mPathBounds.overlaps(mBounds)))
+            return;
         mTotalArea += mCurrentArea;
         if (!m_tiled && !m_sized) {
             mBounds.merge(mPathBounds.dilate(mShapeBorder));
@@ -688,6 +673,7 @@ RendererImpl::processPrimShapeSiblings(Shape&& s, const ASTrule* path)
     } else {
         mCurrentArea = 1.0;
     }
+    m_stats.shapeCount++;
     FinishedShape fs(std::move(s), m_stats.shapeCount, mPathBounds);
     fs.mWorldState.m_Z.sz = mCurrentArea;
     if (!m_cfdg->usesTime) {
@@ -720,7 +706,10 @@ RendererImpl::processPrimShapeSiblings(Shape&& s, const ASTrule* path)
         system()->message("A shape got too big.");
         return;
     }
-    mFinishedShapes.push_back(fs);
+    // Drop shapes outside the current frame if we are animating and rerunning
+    // the cfdg file for every frame.
+    if (!m_cfdg->usesFrameTime || fs.mWorldState.m_time.overlaps(mFrameTimeBounds))
+        mFinishedShapes.push_back(fs);
 }
 
 void
@@ -762,13 +751,13 @@ RendererImpl::fileIfNecessary()
 void
 RendererImpl::moveUnfinishedToTwoFiles()
 {
-    m_unfinishedFiles.emplace_back(system(), AbstractSystem::ExpensionTemp,
-                                   "expansion", ++mUnfinishedFileCount);
+    m_unfinishedFiles.emplace_back(system(), AbstractSystem::ExpansionTemp,
+                                   ++mUnfinishedFileCount);
     unique_ptr<ostream> f1(m_unfinishedFiles.back().forWrite());
     int num1 = m_unfinishedFiles.back().number();
 
-    m_unfinishedFiles.emplace_back(system(), AbstractSystem::ExpensionTemp,
-                                   "expansion", ++mUnfinishedFileCount);
+    m_unfinishedFiles.emplace_back(system(), AbstractSystem::ExpansionTemp,
+                                   ++mUnfinishedFileCount);
     unique_ptr<ostream> f2(m_unfinishedFiles.back().forWrite());
     int num2 = m_unfinishedFiles.back().number();
     
@@ -783,6 +772,7 @@ RendererImpl::moveUnfinishedToTwoFiles()
     
     if (f1 && f1->good() && f2 && f2->good()) {
         AbstractSystem::Stats outStats = m_stats;
+        outStats.mSystem = system();
         outStats.outputCount = static_cast<int>(count);
         outStats.outputDone = 0;
         *f1 << outStats.outputCount;
@@ -826,6 +816,7 @@ RendererImpl::getUnfinishedFromFile()
 
     if (f->good()) {
         AbstractSystem::Stats outStats = m_stats;
+        outStats.mSystem = system();
         *f >> outStats.outputCount;
         outStats.outputDone = 0;
         outStats.showProgress = true;
@@ -864,6 +855,7 @@ RendererImpl::fixupHeap()
         return;
 
     AbstractSystem::Stats outStats = m_stats;
+    outStats.mSystem = system();
     outStats.outputCount = static_cast<int>(n);
     outStats.outputDone = 0;
     outStats.showProgress = true;
@@ -889,7 +881,7 @@ RendererImpl::fixupHeap()
 void
 RendererImpl::moveFinishedToFile()
 {
-    m_finishedFiles.emplace_back(system(), AbstractSystem::ShapeTemp, "shapes", ++mFinishedFileCount);
+    m_finishedFiles.emplace_back(system(), AbstractSystem::ShapeTemp, ++mFinishedFileCount);
     
     unique_ptr<ostream> f(m_finishedFiles.back().forWrite());
 
@@ -898,6 +890,7 @@ RendererImpl::moveFinishedToFile()
             system()->message("Sorting shapes...");
         std::sort(mFinishedShapes.begin(), mFinishedShapes.end());
         AbstractSystem::Stats outStats = m_stats;
+        outStats.mSystem = system();
         outStats.outputCount = static_cast<int>(mFinishedShapes.size());
         outStats.outputDone = 0;
         outStats.showProgress = true;
@@ -962,7 +955,7 @@ RendererImpl::forEachShape(bool final, ShapeFunction op)
         deque<TempFile>::iterator begin, last, end;
         
         while (m_finishedFiles.size() > MaxMergeFiles) {
-            TempFile t(system(), AbstractSystem::MergeTemp, "merge", ++mFinishedFileCount);
+            TempFile t(system(), AbstractSystem::MergeTemp, ++mFinishedFileCount);
             
             {
                 OutputMerge merger;
@@ -995,11 +988,8 @@ RendererImpl::forEachShape(bool final, ShapeFunction op)
         
         OutputMerge merger;
         
-        begin = m_finishedFiles.begin();
-        end = m_finishedFiles.end();
-        
-        for (auto it = begin; it != end; ++it)
-            merger.addTempFile(*it);
+        for (auto&& file: m_finishedFiles)
+            merger.addTempFile(file);
         
         merger.addShapes(mFinishedShapes.begin(), mFinishedShapes.end());
         merger.merge(op);
@@ -1023,8 +1013,8 @@ RendererImpl::drawShape(const FinishedShape& s)
     agg::trans_affine tr = s.mWorldState.m_transform;
     tr *= m_currTrans;
     double a = s.mWorldState.m_Z.sz * m_currArea; //fabs(tr.determinant());
-    if ((!isfinite(a) && s.mShapeType != primShape::fillType) || 
-        a < m_minArea) return;
+    if (s.mShapeType != primShape::fillType && (!isfinite(a) || a < m_minArea))
+        return;
     
     if (m_tiledCanvas && s.mShapeType != primShape::fillType) {
         Bounds b = s.mBounds;
@@ -1125,9 +1115,3 @@ RendererImpl::processPathCommand(const Shape& s, const AST::CommandInfo* attr)
     }
 }
 
-void
-RendererImpl::storeParams(const StackRule* p)
-{
-    p->mRefCount = StackRule::MaxRefCount;
-    m_cfdg->mLongLivedParams.push_back(p);
-}

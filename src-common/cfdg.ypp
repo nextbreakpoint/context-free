@@ -40,29 +40,13 @@
 %code requires {
 #include "builder.h"
 #include <string>
-namespace AST {
-    class ASTexpression;
-    class ASTmodTerm;
-    class ASTmodification;
-    class ASTpath;
-    class ASTreplacement;
-    class ASTbodyContainer;
-    class ASTloop;
-    class ASTif;
-    class ASTswitch;
-    class ASTpathBody;
-    class ASTpathLoop;
-    class ASTruleSpecifier;
-    class ASTrule;
-    class ASTdefine;
-}
 }
 
 %union
 {
     unsigned modToken;
     std::string*  string;
-    const std::string*  cstring;
+    CFG cfgenum;
     AST::ASTexpression* expression;
     AST::ASTmodTerm* term;
     AST::ASTmodification* mod;
@@ -153,13 +137,13 @@ namespace AST {
 %type <switchObj> switchHeader
 %type <ruleObj> rule_header path_header rule_header_v2 path_header_v2 shape_singleton_header
 %type <string> fileString fileNameSpace shapeName
-%type <cstring> directive_string
+%type <cfgenum> directive_num
 %type <modToken> caseHeader
 %type <bodyObj> letHeader
 %type <defObj> definition_header global_definition_header function_definition_header global_definition definition
 
 %destructor { delete $$; } USER_STRING USER_FILENAME USER_QSTRING USER_PATHOP USER_ARRAYNAME fileString fileNameSpace shapeName
-%destructor { } directive_string
+%destructor { } directive_num
 %destructor { delete $$; } definition_header global_definition_header function_definition_header global_definition definition
 %destructor { delete $$; } exp exp2 exp3 expfunc explist arglist parameter_spec letBody
 %destructor { delete $$; } adjustment
@@ -305,30 +289,24 @@ initialization:
             exp_ptr p($parameter_spec); $parameter_spec = nullptr;
             mod_ptr mod($modification); $modification = nullptr;
             driver.SetShape(nullptr);
-            ASTdefine* cfg = driver.MakeDefinition(CFDG::ParamNames[CFG::StartShape], @initialization, false);
-            if (cfg)
-                cfg->mExpression.reset(driver.MakeRuleSpec(*name, std::move(p), @shapeName, std::move(mod), true));
-            $initialization = cfg;
+            $initialization = driver.MakeDefinition(CFG::StartShape, @initialization,
+                                                    driver.MakeRuleSpec(*name, std::move(p), @shapeName, std::move(mod), true));
         }
         |
         STARTSHAPE USER_ARRAYNAME[shapeName] modification {
             str_ptr name($shapeName);   $shapeName = nullptr;
             mod_ptr mod($modification); $modification = nullptr;
             driver.SetShape(nullptr);
-            ASTdefine* cfg = driver.MakeDefinition(CFDG::ParamNames[CFG::StartShape], @initialization, false);
-            if (cfg)
-                cfg->mExpression.reset(driver.MakeRuleSpec(*name, nullptr, @shapeName, std::move(mod), true));
-            $initialization = cfg;
+            $initialization = driver.MakeDefinition(CFG::StartShape, @initialization,
+                                                    driver.MakeRuleSpec(*name, nullptr, @shapeName, std::move(mod), true));
         }
         |
         STARTSHAPE USER_STRING[shapeName] parameter_spec {
             str_ptr name($shapeName);   $shapeName = nullptr;
             exp_ptr p($parameter_spec); $parameter_spec = nullptr;
             driver.SetShape(nullptr);
-            ASTdefine* cfg = driver.MakeDefinition(CFDG::ParamNames[CFG::StartShape], @initialization, false);
-            if (cfg)
-                cfg->mExpression.reset(driver.MakeRuleSpec(*name, std::move(p), @shapeName, nullptr, true));
-            $initialization = cfg;
+            $initialization = driver.MakeDefinition(CFG::StartShape, @initialization,
+                                                    driver.MakeRuleSpec(*name, std::move(p), @shapeName, nullptr, true));
         }
         ;
 
@@ -336,41 +314,36 @@ initialization_v2:
         STARTSHAPE USER_STRING[shapeName] {
             str_ptr name($shapeName); $shapeName = nullptr;
             driver.SetShape(nullptr);
-            ASTdefine* cfg = driver.MakeDefinition(CFDG::ParamNames[CFG::StartShape], @initialization_v2, false);
-            if (cfg)
-                cfg->mExpression.reset(driver.MakeRuleSpec(*name, nullptr, @shapeName, nullptr, true));
-            $initialization_v2 = cfg;
+            $initialization_v2 = driver.MakeDefinition(CFG::StartShape, @initialization_v2,
+                                                       driver.MakeRuleSpec(*name, nullptr, @shapeName, nullptr, true));
         }
         ;
 
 directive_v2:
-        directive_string modification_v2 {
+        directive_num modification_v2 {
             exp_ptr mod($modification_v2); $modification_v2 = nullptr;
-            ASTdefine* cfg = driver.MakeDefinition(*$directive_string, @directive_v2, false);
-            if (cfg)
-                cfg->mExpression = std::move(mod);
             driver.lexer->maybeVersion = token::CFDG2;
-            $directive_v2 = cfg;
+            $directive_v2 = driver.MakeDefinition($directive_num, @directive_v2, std::move(mod));
         }
         ;
 
-directive_string:
-        BACKGROUND { $directive_string = &CFDG::ParamNames[CFG::Background]; }
+directive_num:
+        BACKGROUND { $directive_num = CFG::Background; }
         |
-        TILE { $directive_string = &CFDG::ParamNames[CFG::Tile]; }
+        TILE { $directive_num = CFG::Tile; }
         |
         MODTYPE {
             switch ($1) {
-            case ASTmodTerm::size:
-                $directive_string = &CFDG::ParamNames[CFG::Size];
-                break;
-            case ASTmodTerm::time:
-                $directive_string = &CFDG::ParamNames[CFG::Time];
-                break;
-            default:
-                $directive_string = &CFDG::ParamNames[CFG::Size];
-                error(@MODTYPE, "Syntax error");
-                break;
+                case ASTmodTerm::size:
+                    $directive_num = CFG::Size;
+                    break;
+                case ASTmodTerm::time:
+                    $directive_num = CFG::Time;
+                    break;
+                default:
+                    $directive_num = CFG::Size;
+                    error(@MODTYPE, "Syntax error");
+                    break;
             }
         }
         ;
@@ -393,7 +366,7 @@ global_definition:
                     case ASTdefine::FunctionDefine:
                         driver.pop_repContainer(nullptr);
                         driver.mParamDecls.mParameters.clear();
-                        driver.mParamDecls.mStackCount = 0;
+                        driver.mParamSize = 0;
                         // fall through
                     default:
                         var->mExpression = std::move(exp);
@@ -459,7 +432,7 @@ global_definition_header:
             } else {
                 // An error occurred
                 driver.mParamDecls.mParameters.clear();
-                driver.mParamDecls.mStackCount = 0;
+                driver.mParamSize = 0;
             }
             $global_definition_header = $function_definition_header;
         }
@@ -1023,28 +996,11 @@ caseHeader:
         CASE exp2 ':' {
             exp_ptr valExp($exp2); $exp2 = nullptr;
             
-            double val = 0.0;
-            try {
-                if (valExp->evaluate(&val, 1) != 1) {
-                    driver.error(@exp2, "Case expression is not a single, numeric expression");
-                } else {
-                    int intval = static_cast<int>(floor(val));
-                    ASTswitch::switchMap& caseMap = driver.switchStack.top()->mCaseStatements;
-                    
-                    if (caseMap.count(intval)) {
-                        driver.error(@exp2, "Case value already in use");
-                        driver.push_repContainer(*(caseMap[intval]));
-                    } else {
-                        cont_ptr caseBody(new ASTrepContainer());
-                        driver.push_repContainer(*(caseBody.get()));
-                        std::pair<int, cont_ptr> p(intval, std::move(caseBody));
-                        caseMap.insert(std::move(p));
-                    }
-                }
-            }
-            catch (DeferUntilRuntime&) {
-                driver.error(@exp2, "Case expression is not constant");
-            }
+            ASTswitch* _switch = driver.switchStack.top();
+            cont_ptr caseBody(new ASTrepContainer());
+            driver.push_repContainer(*caseBody);
+            _switch->mCases.emplace_back(std::move(valExp), std::move(caseBody));
+            
             $caseHeader = 0;
         }
         |
@@ -1187,7 +1143,7 @@ exp[res]:
         |
         exp[start] RANGEOP exp[end] {
             exp_ptr pair($start->append($end)); $start = nullptr; $end = nullptr;
-            $res = new ASTfunction("rand", std::move(pair), driver.mSeed, @start, @res);
+            $res = new ASTfunction("rand.", std::move(pair), driver.mSeed, @start, @res);
         }
         |
         exp[center] PLUSMINUSOP exp[range] {
@@ -1217,7 +1173,7 @@ exp3[res]:
         |
         exp3[start] RANGEOP exp3[end] {
             exp_ptr pair($start->append($end)); $start = nullptr; $end = nullptr;
-            $res = new ASTfunction("rand", std::move(pair), driver.mSeed, @start, @res);
+            $res = new ASTfunction("rand.", std::move(pair), driver.mSeed, @start, @res);
         }
         |
         exp3[center] PLUSMINUSOP exp3[range] {

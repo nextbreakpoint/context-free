@@ -32,6 +32,7 @@
 #import "VariationFormatter.h"
 #import <WebKit/WebFrame.h>
 #import <WebKit/DOMCore.h>
+#include <Security/Security.h>
 
 #include <string>
 #include <sstream>
@@ -55,13 +56,119 @@ namespace {
     static NSString* ccURI   = @"CreativeCommonsLicenseURI";
     static NSString* ccName  = @"CreativeCommonsLicenseName";
     static NSString* ccImage = @"CreativeCommonsLicenseImage";
+    
+    static NSString* galDomain = @"www.contextfreeart.org";
+    static NSString* galPath = @"/gallery/";
+    
+    SecKeychainItemRef getGalleryKeychainItem(NSString* name)
+    {
+        SecKeychainItemRef itemRef = nil;
+        if (SecKeychainFindInternetPassword(NULL,
+                                            (UInt32)[galDomain length],
+                                            [galDomain UTF8String],
+                                            0,
+                                            NULL,
+                                            (UInt32)[name length],
+                                            [name UTF8String],
+                                            (UInt32)[galPath length],
+                                            [galPath UTF8String],
+                                            0,
+                                            kSecProtocolTypeHTTPS,
+                                            kSecAuthenticationTypeHTMLForm,
+                                            0,
+                                            NULL,
+                                            &itemRef
+                                            ) == errSecSuccess)
+        {
+            return itemRef;
+        }
+        return nil;
+    }
 }
 
 
 
 @implementation GalleryUploader
 
-- (id)initForDocument:(CFDGDocument*)document andView:(GView*)view;
++ (NSString*) copyPassword:(NSString *)forUser
+{
+    NSString* ret = NULL;
+    
+    if (SecKeychainItemRef itemRef = getGalleryKeychainItem(forUser)) {
+        SecKeychainAttribute     attr;
+        SecKeychainAttributeList attrList;
+        UInt32                   length;
+        void                     *outData;
+        
+        // To set the account name attribute
+        attr.tag = kSecAccountItemAttr;
+        attr.length = 0;
+        attr.data = NULL;
+        attrList.count = 1;
+        attrList.attr = &attr;
+        
+        
+        if (SecKeychainItemCopyContent(itemRef, NULL, &attrList, &length, &outData) == noErr) {
+            ret = [[NSString alloc] initWithBytes:outData
+                                           length:length
+                                         encoding:NSUTF8StringEncoding];
+            SecKeychainItemFreeContent(&attrList, outData);
+        }
+        CFRelease(itemRef);
+    }
+    return ret;
+}
+
++ (void) savePassword:(NSString*)password forUser:(NSString*)user
+{
+    SecKeychainItemRef itemRef;
+
+    if (!password || !user) return;
+    
+    if (SecKeychainItemRef itemRef = getGalleryKeychainItem(user)) {
+        // Try to update password of existing keychain item
+        SecKeychainAttribute     attr;
+        SecKeychainAttributeList attrList;
+        
+        // To set the account name attribute
+        attr.tag = kSecAccountItemAttr;
+        attr.length = (UInt32)[user length];
+        attr.data = (void*)[user UTF8String];
+        attrList.count = 1;
+        attrList.attr = &attr;
+        
+        if (SecKeychainItemModifyContent(itemRef, &attrList, (UInt32)[password length],
+                                         (void *)[password UTF8String]) == noErr)
+        {
+            return;         // success, we're done
+        }
+        // failure, make a new item
+    }
+    
+    if (OSStatus s = SecKeychainAddInternetPassword(NULL,
+                                                   (UInt32)[galDomain length],
+                                                   [galDomain UTF8String],
+                                                   0,
+                                                   NULL,
+                                                   (UInt32)[user length],
+                                                   [user UTF8String],
+                                                   (UInt32)[galPath length],
+                                                   [galPath UTF8String],
+                                                   0,
+                                                   kSecProtocolTypeHTTPS,
+                                                   kSecAuthenticationTypeHTMLForm,
+                                                   (UInt32)[password length],
+                                                   [password UTF8String],
+                                                   &itemRef
+                                                   ) != noErr)
+    {
+        CFStringRef msg = SecCopyErrorMessageString(s, NULL);
+        NSLog(@"Error saving password: %@", (NSString*)msg);
+        CFRelease(msg);
+    }
+}
+
+- (id)initForDocument:(CFDGDocument*)document andView:(GView*)view
 {
     self = [self initWithWindowNibName: @"GalleryUploader"];
     if (!self) return self;
@@ -86,6 +193,8 @@ namespace {
     [mFormView release];
     [mConnection release];
     [mResponseBody release];
+    [mOrigPassword release];
+    [mOrigName release];
     [super dealloc];
 }
 
@@ -227,6 +336,11 @@ namespace {
 - (IBAction)show:(id)sender
 {
     [self setView: mFormView];
+    
+    mOrigName = [[NSString alloc] initWithString: [mUserNameField stringValue]];
+    mOrigPassword = [GalleryUploader copyPassword: mOrigName];
+    [mPasswordField setStringValue: mOrigPassword];
+    
 
     if ([[mTitleField stringValue] length] == 0) {
         [mTitleField setStringValue: [mDocument displayName]];
@@ -329,7 +443,7 @@ namespace {
 - (IBAction)goToCreateAccount:(id)sender
 {
     NSURL* url = [NSURL URLWithString: 
-        @"http://www.contextfreeart.org/phpbb/profile.php?mode=register"];
+        @"https://www.contextfreeart.org/phpbb/ucp.php?mode=register"];
     
     [[NSWorkspace sharedWorkspace] openURL: url];
 }
@@ -395,6 +509,13 @@ decisionListener:(id)listener
 
 - (IBAction)upload:(id)sender
 {
+    if (![[mPasswordField stringValue] isEqualToString: mOrigPassword] ||
+        ![[mUserNameField stringValue] isEqualToString: mOrigName])
+    {
+        [GalleryUploader savePassword: [mPasswordField stringValue]
+                              forUser: [mUserNameField stringValue]];
+    }
+    
     NSData* body = [self requestBody];
     if (!body) {
         [mMessage setString: @"Failed to generate PNG image to upload."];
@@ -404,7 +525,7 @@ decisionListener:(id)listener
     
     NSMutableURLRequest* request =
         [NSMutableURLRequest requestWithURL:
-                [NSURL URLWithString: @"http://www.contextfreeart.org/gallery/upload.php"]
+                [NSURL URLWithString: @"https://www.contextfreeart.org/gallery/upload.php"]
                 //[NSURL URLWithString: @"http://aluminium.local/~john/cfa2/gallery/upload.php"]
             cachePolicy: NSURLRequestReloadIgnoringCacheData
             timeoutInterval: 120.0
@@ -454,7 +575,15 @@ decisionListener:(id)listener
 }
 
 
-
+- (NSURLRequest *)connection:(NSURLConnection *)connection
+             willSendRequest:(NSURLRequest *)request
+            redirectResponse:(NSURLResponse *)redirectresponse
+{
+    if (redirectresponse)
+        return nil;     // Reject redirects
+    else
+        return request;
+}
 
 - (IBAction)cancel:(id)sender
 {

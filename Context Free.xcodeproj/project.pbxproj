@@ -7,8 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5200D9601D8B27FC00F60731 /* AVcanvas.mm in Sources */ = {isa = PBXBuildFile; fileRef = 5200D95E1D8B27FC00F60731 /* AVcanvas.mm */; };
+		5200D9661D8C96BF00F60731 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5200D9651D8C96BF00F60731 /* AVFoundation.framework */; };
+		5200D9681D8C96F400F60731 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5200D9671D8C96F400F60731 /* CoreMedia.framework */; };
+		5200D96A1D8C972C00F60731 /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5200D9691D8C972C00F60731 /* CoreVideo.framework */; };
 		520EC5F60A0C61DC00853FF3 /* i_polygons.cfdg in CopyFiles */ = {isa = PBXBuildFile; fileRef = 520EC5C00A0C3BA800853FF3 /* i_polygons.cfdg */; };
 		52100A7F0D3A9F1800F7070D /* Rand64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 52100A7E0D3A9F1800F7070D /* Rand64.cpp */; };
+		52154E811DD038690031905B /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 52154E801DD038690031905B /* Security.framework */; };
 		521F8125105607F10096D22C /* agg_color_rgba.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 521F8124105607F10096D22C /* agg_color_rgba.cpp */; };
 		5226EFAE1071BB7600A30CC3 /* BitmapImageHolder.mm in Sources */ = {isa = PBXBuildFile; fileRef = 5226EFAD1071BB7600A30CC3 /* BitmapImageHolder.mm */; };
 		523311110CF7F6260087307A /* agg_curves.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5233110E0CF7F6260087307A /* agg_curves.cpp */; };
@@ -70,9 +75,6 @@
 		52BA888B155F30490026AF04 /* ast.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 52BA888A155F30490026AF04 /* ast.cpp */; };
 		52BA888C155F30490026AF04 /* ast.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 52BA888A155F30490026AF04 /* ast.cpp */; };
 		52C267B8154F26BD00230EB9 /* abstractPngCanvas.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 52C267B7154F26BD00230EB9 /* abstractPngCanvas.cpp */; };
-		52E94E9913650A2E00BB2D96 /* QTKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 52E94E9813650A2E00BB2D96 /* QTKit.framework */; };
-		52E94EAE13650C5C00BB2D96 /* qtCanvas.mm in Sources */ = {isa = PBXBuildFile; fileRef = 52E94EAD13650C5C00BB2D96 /* qtCanvas.mm */; };
-		52E950A41367D3B600BB2D96 /* QuickTime.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 52E950A31367D3B600BB2D96 /* QuickTime.framework */; };
 		52FB6B9409ECB8A20008CE6E /* tiledCanvas.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 52FB6B9309ECB8A20008CE6E /* tiledCanvas.cpp */; };
 		8D11072F0486CEB800E47090 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */; };
 		FD1EF0910811ADE500FD38C6 /* cfdg.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FD1EF08B0811ADE500FD38C6 /* cfdg.cpp */; };
@@ -224,13 +226,19 @@
 		1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = /System/Library/Frameworks/Cocoa.framework; sourceTree = "<absolute>"; };
 		29B97324FDCFA39411CA2CEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
 		29B97325FDCFA39411CA2CEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = /System/Library/Frameworks/Foundation.framework; sourceTree = "<absolute>"; };
+		5200D95E1D8B27FC00F60731 /* AVcanvas.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = AVcanvas.mm; sourceTree = "<group>"; };
+		5200D9611D8B2F9400F60731 /* AVcanvas.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.h; fileEncoding = 4; path = AVcanvas.h; sourceTree = "<group>"; };
+		5200D9651D8C96BF00F60731 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		5200D9671D8C96F400F60731 /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
+		5200D9691D8C972C00F60731 /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = System/Library/Frameworks/CoreVideo.framework; sourceTree = SDKROOT; };
 		5205AE8C14455E4C00245A6F /* version.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = version.h; path = "src-common/version.h"; sourceTree = "<group>"; };
 		520EC5C00A0C3BA800853FF3 /* i_polygons.cfdg */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text; path = i_polygons.cfdg; sourceTree = "<group>"; };
 		52100A7D0D3A9F1800F7070D /* Rand64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Rand64.h; sourceTree = "<group>"; };
 		52100A7E0D3A9F1800F7070D /* Rand64.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Rand64.cpp; sourceTree = "<group>"; };
+		52154E801DD038690031905B /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		521B94EB0BA507B800BD9A09 /* agg_pixfmt_rgb.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = agg_pixfmt_rgb.h; sourceTree = "<group>"; };
 		521F8124105607F10096D22C /* agg_color_rgba.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = agg_color_rgba.cpp; sourceTree = "<group>"; };
-		5226EFAA1071BB3900A30CC3 /* BitmapImageHolder.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = BitmapImageHolder.h; sourceTree = "<group>"; };
+		5226EFAA1071BB3900A30CC3 /* BitmapImageHolder.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.c.objc; fileEncoding = 4; path = BitmapImageHolder.h; sourceTree = "<group>"; };
 		5226EFAD1071BB7600A30CC3 /* BitmapImageHolder.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = BitmapImageHolder.mm; sourceTree = "<group>"; };
 		523310F20CF7F1470087307A /* agg_conv_contour.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = agg_conv_contour.h; sourceTree = "<group>"; };
 		523310F30CF7F1470087307A /* agg_conv_curve.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = agg_conv_curve.h; sourceTree = "<group>"; };
@@ -296,16 +304,13 @@
 		529A79530B7C373200D45C38 /* agg_scanline_p.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = agg_scanline_p.h; sourceTree = "<group>"; };
 		529CC95515A393820079C2B5 /* ffCanvas.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ffCanvas.h; sourceTree = "<group>"; };
 		529CC95615A393820079C2B5 /* ffCanvasDummy.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ffCanvasDummy.cpp; sourceTree = "<group>"; };
+		52A1B8171D72073700A310F0 /* args.hxx */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = args.hxx; path = "src-unix/args.hxx"; sourceTree = "<group>"; };
 		52BA888A155F30490026AF04 /* ast.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ast.cpp; sourceTree = "<group>"; };
 		52C267B6154F268C00230EB9 /* abstractPngCanvas.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = abstractPngCanvas.h; sourceTree = "<group>"; };
 		52C267B7154F26BD00230EB9 /* abstractPngCanvas.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = abstractPngCanvas.cpp; sourceTree = "<group>"; };
 		52D06C1E17667BB400F8D94C /* config.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = config.h; sourceTree = "<group>"; };
 		52D5D8DA1ACB938B005109E5 /* myrandom.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = myrandom.h; sourceTree = "<group>"; };
 		52D803671A69BCD800047742 /* xorshift64star.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = xorshift64star.h; sourceTree = "<group>"; };
-		52E94E9813650A2E00BB2D96 /* QTKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QTKit.framework; path = System/Library/Frameworks/QTKit.framework; sourceTree = SDKROOT; };
-		52E94EAD13650C5C00BB2D96 /* qtCanvas.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = qtCanvas.mm; sourceTree = "<group>"; };
-		52E950A31367D3B600BB2D96 /* QuickTime.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickTime.framework; path = System/Library/Frameworks/QuickTime.framework; sourceTree = SDKROOT; };
-		52E95226136933C200BB2D96 /* qtCanvas.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = qtCanvas.h; sourceTree = "<group>"; };
 		52F014EF108D6AEA00A329BE /* agg_trans_affine_1D.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = agg_trans_affine_1D.h; sourceTree = "<group>"; };
 		52FB6B8009ECB3E60008CE6E /* tiledCanvas.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = tiledCanvas.h; sourceTree = "<group>"; };
 		52FB6B9309ECB8A20008CE6E /* tiledCanvas.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = tiledCanvas.cpp; sourceTree = "<group>"; };
@@ -423,11 +428,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				52154E811DD038690031905B /* Security.framework in Frameworks */,
+				5200D96A1D8C972C00F60731 /* CoreVideo.framework in Frameworks */,
+				5200D9681D8C96F400F60731 /* CoreMedia.framework in Frameworks */,
+				5200D9661D8C96BF00F60731 /* AVFoundation.framework in Frameworks */,
 				8D11072F0486CEB800E47090 /* Cocoa.framework in Frameworks */,
 				FD782C43082A03ED00910D5E /* SystemConfiguration.framework in Frameworks */,
 				527631520D7B490B00F0F7C8 /* WebKit.framework in Frameworks */,
-				52E94E9913650A2E00BB2D96 /* QTKit.framework in Frameworks */,
-				52E950A41367D3B600BB2D96 /* QuickTime.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -440,7 +447,6 @@
 				527631510D7B490B00F0F7C8 /* WebKit.framework */,
 				FD782C42082A03ED00910D5E /* SystemConfiguration.framework */,
 				1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */,
-				52E94E9813650A2E00BB2D96 /* QTKit.framework */,
 			);
 			name = "Linked Frameworks";
 			sourceTree = "<group>";
@@ -474,7 +480,6 @@
 				FD3C082A08234F8300693028 /* input */,
 				29B97323FDCFA39411CA2CEA /* Frameworks */,
 				19C28FACFE9D520D11CA2CBB /* Products */,
-				52E950A31367D3B600BB2D96 /* QuickTime.framework */,
 			);
 			name = CFDA;
 			sourceTree = "<group>";
@@ -482,6 +487,10 @@
 		29B97323FDCFA39411CA2CEA /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				52154E801DD038690031905B /* Security.framework */,
+				5200D9691D8C972C00F60731 /* CoreVideo.framework */,
+				5200D9671D8C96F400F60731 /* CoreMedia.framework */,
+				5200D9651D8C96BF00F60731 /* AVFoundation.framework */,
 				1058C7A0FEA54F0111CA2CBB /* Linked Frameworks */,
 				1058C7A2FEA54F0111CA2CBB /* Other Frameworks */,
 			);
@@ -491,6 +500,7 @@
 		524D22DB13BA01D8002732C2 /* src-unix */ = {
 			isa = PBXGroup;
 			children = (
+				52A1B8171D72073700A310F0 /* args.hxx */,
 				5205AE8C14455E4C00245A6F /* version.h */,
 				524D22DC13BA0200002732C2 /* main.cpp */,
 				524D22DD13BA0200002732C2 /* pngCanvas.cpp */,
@@ -575,8 +585,6 @@
 		FD1EF0970811AE1900FD38C6 /* src-osx */ = {
 			isa = PBXGroup;
 			children = (
-				52E95226136933C200BB2D96 /* qtCanvas.h */,
-				52E94EAD13650C5C00BB2D96 /* qtCanvas.mm */,
 				526347601135AEC4005A96CF /* KFSplitView.h */,
 				526347611135AEC4005A96CF /* KFSplitView.m */,
 				5226EFAA1071BB3900A30CC3 /* BitmapImageHolder.h */,
@@ -604,6 +612,8 @@
 				FD32F9D10892EFE100DB40F4 /* ColorCalc.mm */,
 				FD32FA2A08934E0900DB40F4 /* GrammarTextView.h */,
 				FD32FA2B08934E0900DB40F4 /* GrammarTextView.mm */,
+				5200D95E1D8B27FC00F60731 /* AVcanvas.mm */,
+				5200D9611D8B2F9400F60731 /* AVcanvas.h */,
 			);
 			path = "src-osx";
 			sourceTree = "<group>";
@@ -782,7 +792,7 @@
 		29B97313FDCFA39411CA2CEA /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0720;
+				LastUpgradeCheck = 0800;
 				TargetAttributes = {
 					8D1107260486CEB800E47090 = {
 						DevelopmentTeam = 23E5SF7D5S;
@@ -887,6 +897,7 @@
 				FD1EF0930811ADE500FD38C6 /* cfdg.l in Sources */,
 				FD1EF0910811ADE500FD38C6 /* cfdg.cpp in Sources */,
 				FD3A51BA09A7DD2F00BBCD6E /* shape.cpp in Sources */,
+				5200D9601D8B27FC00F60731 /* AVcanvas.mm in Sources */,
 				FD3A51C509A7DEF500BBCD6E /* cfdgimpl.cpp in Sources */,
 				FD3A51CF09A7FC3000BBCD6E /* renderimpl.cpp in Sources */,
 				FD3A51B009A7DAE300BBCD6E /* builder.cpp in Sources */,
@@ -922,7 +933,6 @@
 				526BCBD910F5C425003357E9 /* astreplacement.cpp in Sources */,
 				526347621135AEC4005A96CF /* KFSplitView.m in Sources */,
 				527FE238135ABF2400F9B15F /* pathIterator.cpp in Sources */,
-				52E94EAE13650C5C00BB2D96 /* qtCanvas.mm in Sources */,
 				5276AA9913776AE1000FA1AB /* CmdInfo.cpp in Sources */,
 				5276ACE9137A513B000FA1AB /* stacktype.cpp in Sources */,
 				52BA888B155F30490026AF04 /* ast.cpp in Sources */,
@@ -974,12 +984,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = YES;
-				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
-				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = NO;
 				CODE_SIGN_IDENTITY = "Mac Developer";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Mac Developer";
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 42;
@@ -996,7 +1004,6 @@
 				INFOPLIST_FILE = "src-osx/Info.plist";
 				INSTALL_PATH = "$(HOME)/Applications";
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ozonehouse.ContextFree;
 				PRODUCT_NAME = "Context Free";
 				PROVISIONING_PROFILE = "";
@@ -1004,6 +1011,11 @@
 				STRIP_INSTALLED_PRODUCT = NO;
 				USER_HEADER_SEARCH_PATHS = /usr/local/include;
 				VERSIONING_SYSTEM = "apple-generic";
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wextra",
+					"-Wno-unused-parameter",
+				);
 				WRAPPER_EXTENSION = app;
 				ZERO_LINK = NO;
 			};
@@ -1012,13 +1024,16 @@
 		52086FBB0ABD19F6005EBDC1 /* Performance */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = NO;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1035,7 +1050,6 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				SDKROOT = macosx;
 				WARNING_CFLAGS = "-Wall";
 			};
@@ -1045,7 +1059,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_CXX_LIBRARY = "libc++";
 				COPY_PHASE_STRIP = NO;
 				GCC_C_LANGUAGE_STANDARD = c99;
@@ -1064,10 +1078,16 @@
 				LIBRARY_SEARCH_PATHS = /usr/local/lib;
 				MACH_O_TYPE = mh_execute;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				OTHER_LDFLAGS = "-lpng";
 				PRODUCT_NAME = cfdg;
 				SDKROOT = macosx;
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wshadow",
+					"-Wunreachable-code",
+					"-Wshadow-ivar",
+					"-Wextra",
+				);
 			};
 			name = Development;
 		};
@@ -1075,7 +1095,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_CXX_LIBRARY = "libc++";
 				COPY_PHASE_STRIP = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
@@ -1094,10 +1114,16 @@
 				LIBRARY_SEARCH_PATHS = /usr/local/lib;
 				MACH_O_TYPE = mh_execute;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				OTHER_LDFLAGS = "-lpng";
 				PRODUCT_NAME = cfdg;
 				SDKROOT = macosx;
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wshadow",
+					"-Wunreachable-code",
+					"-Wshadow-ivar",
+					"-Wextra",
+				);
 				ZERO_LINK = NO;
 			};
 			name = Deployment;
@@ -1106,7 +1132,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_CXX_LIBRARY = "libc++";
 				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_MODEL_TUNING = G5;
@@ -1123,10 +1149,16 @@
 				LIBRARY_SEARCH_PATHS = /usr/local/lib;
 				MACH_O_TYPE = mh_execute;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				OTHER_LDFLAGS = "-lpng";
 				PRODUCT_NAME = cfdg;
 				SDKROOT = macosx;
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wshadow",
+					"-Wunreachable-code",
+					"-Wshadow-ivar",
+					"-Wextra",
+				);
 			};
 			name = Universal;
 		};
@@ -1134,7 +1166,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_CXX_LIBRARY = "libc++";
 				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_MODEL_TUNING = G5;
@@ -1151,10 +1183,16 @@
 				LIBRARY_SEARCH_PATHS = /usr/local/lib;
 				MACH_O_TYPE = mh_execute;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				OTHER_LDFLAGS = "-lpng";
 				PRODUCT_NAME = cfdg;
 				SDKROOT = macosx;
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wshadow",
+					"-Wunreachable-code",
+					"-Wshadow-ivar",
+					"-Wextra",
+				);
 			};
 			name = Performance;
 		};
@@ -1162,12 +1200,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = YES;
-				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
-				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = NO;
 				CODE_SIGN_IDENTITY = "Mac Developer";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Mac Developer";
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
 				CURRENT_PROJECT_VERSION = 42;
@@ -1186,7 +1222,6 @@
 				INSTALL_PATH = "$(HOME)/Applications";
 				LLVM_VECTORIZE_LOOPS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				"OTHER_CFLAGS[arch=*]" = "-DNDEBUG=1";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ozonehouse.ContextFree;
 				PRODUCT_NAME = "Context Free";
@@ -1194,6 +1229,11 @@
 				SCAN_ALL_SOURCE_FILES_FOR_INCLUDES = NO;
 				USER_HEADER_SEARCH_PATHS = /usr/local/include;
 				VERSIONING_SYSTEM = "apple-generic";
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wextra",
+					"-Wno-unused-parameter",
+				);
 				WRAPPER_EXTENSION = app;
 				ZERO_LINK = NO;
 			};
@@ -1202,13 +1242,16 @@
 		FD6A132409B25B3000F4E1BC /* Universal */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = NO;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1225,7 +1268,6 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				SDKROOT = macosx;
 				WARNING_CFLAGS = "-Wall";
 			};
@@ -1235,12 +1277,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = YES;
-				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
-				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = NO;
 				CODE_SIGN_IDENTITY = "Mac Developer";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Mac Developer";
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 42;
@@ -1258,14 +1298,17 @@
 				INFOPLIST_FILE = "src-osx/Info.plist";
 				INSTALL_PATH = "$(HOME)/Applications";
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ozonehouse.ContextFree;
 				PRODUCT_NAME = "Context Free";
 				PROVISIONING_PROFILE = "";
 				SCAN_ALL_SOURCE_FILES_FOR_INCLUDES = NO;
 				USER_HEADER_SEARCH_PATHS = /usr/local/include;
 				VERSIONING_SYSTEM = "apple-generic";
-				WARNING_CFLAGS = "-Wall";
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wextra",
+					"-Wno-unused-parameter",
+				);
 				WRAPPER_EXTENSION = app;
 				ZERO_LINK = YES;
 			};
@@ -1275,12 +1318,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = YES;
-				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
-				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = NO;
 				CODE_SIGN_IDENTITY = "Mac Developer";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Mac Developer";
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
 				CURRENT_PROJECT_VERSION = 42;
@@ -1297,13 +1338,17 @@
 				INFOPLIST_FILE = "src-osx/Info.plist";
 				INSTALL_PATH = "$(HOME)/Applications";
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ozonehouse.ContextFree;
 				PRODUCT_NAME = "Context Free";
 				PROVISIONING_PROFILE = "";
 				SCAN_ALL_SOURCE_FILES_FOR_INCLUDES = NO;
 				USER_HEADER_SEARCH_PATHS = /usr/local/include;
 				VERSIONING_SYSTEM = "apple-generic";
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wextra",
+					"-Wno-unused-parameter",
+				);
 				WRAPPER_EXTENSION = app;
 				ZERO_LINK = NO;
 			};
@@ -1312,13 +1357,16 @@
 		FDB0D3D4085CEE00002FBEED /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = NO;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1336,7 +1384,6 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 				WARNING_CFLAGS = "-Wall";
@@ -1346,13 +1393,16 @@
 		FDB0D3D5085CEE00002FBEED /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = NO;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1369,7 +1419,6 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.7;
-				"MACOSX_DEPLOYMENT_TARGET[arch=x86_64]" = 10.7;
 				SDKROOT = macosx;
 				WARNING_CFLAGS = "-Wall";
 			};

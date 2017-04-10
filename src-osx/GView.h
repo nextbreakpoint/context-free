@@ -28,6 +28,12 @@
 
 #import <Cocoa/Cocoa.h>
 #import "KFSplitView.h"
+#include <memory>
+
+extern NSString* PrefKeyMovieZoom;
+extern NSString* PrefKeyMovieLength;
+extern NSString* PrefKeyMovieFrameRate;
+extern NSString* PrefKeyMovieFormat;
 
 @class CFDGDocument;
 @class TopBar;
@@ -36,12 +42,19 @@
 class CFDG;
 class Canvas;
 class Renderer;
-class qtCanvas;
+class AVcanvas;
+class TempFile;
+
+using cfdg_ptr = std::shared_ptr<CFDG>;
+using renderer_ptr = std::unique_ptr<Renderer>;
+using canvas_ptr = std::unique_ptr<Canvas>;
+using tempfile_ptr = std::unique_ptr<TempFile>;
 
 @interface GView : NSView<NSWindowDelegate> {
-    CFDG*       mEngine;
-    Renderer*   mRenderer;
-    Canvas*     mCanvas;
+    cfdg_ptr     mEngine;
+    renderer_ptr mRenderer;
+    canvas_ptr   mCanvas;
+    tempfile_ptr mMovieFile;
     
     NSSize              mRenderSize;    // size we asked to render to
     NSRect              mRenderedRect;  // area that was actually rendered
@@ -87,8 +100,6 @@ class qtCanvas;
     
     NSMenuItem*    mFullScreenMenu;
     
-    qtCanvas*      mAnimationCanvas;
-
     bool    mTiled;
     double  mScale;
 }
@@ -96,15 +107,16 @@ class qtCanvas;
 - (id)initWithFrame:(NSRect)frame;
 
 - (IBAction)toggleRender:(id)sender;
-- (IBAction)saveImage:(id)sender;
+- (IBAction)saveOutput:(id)sender;
 - (IBAction)saveTileImage:(id)sender;
 - (IBAction)saveAsSVG:(id)sender;
-- (IBAction)saveAsMovie:(id)sender;
 - (BOOL)validateMenuItem:(NSMenuItem *)anItem;
 - (IBAction)enterFullscreen:(id)sender;
 - (void)updateFullScreenMenu;
 
 - (IBAction) showHiresRenderSheet:(id)sender;
+- (IBAction) showAnimationSheet:(id)sender;
+- (IBAction) showAnimationFrameSheet:(id)sender;
 
 - (void)noteStats:(NSValue*)v;
 - (void)redisplayImage:(NSValue*)sizeObj;
@@ -123,6 +135,7 @@ class qtCanvas;
 - (IBAction) stopRender:(id)sender;
 - (IBAction) repeatRender:(id)sender;
 - (void) startHiresRender: (NSSize) size minimum: (double) minSize;
+- (void) startAnimation: (NSSize) size minimum: (double) minSize frame: (float) fr;
 @end
 
 @interface GView (variationControl)
